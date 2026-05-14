@@ -33,6 +33,16 @@ const DEVICES = [
     gpioStates: new Array(9).fill(0),
     sensors: { smoke_mv: 1200, rain_mv: 2800, fire_status: 0, rain_status: 0, help_status: 0 },
   },
+  {
+    name: 'Garden_Device',
+    displayName: '智慧庭院',
+    deviceId: 10,
+    mac: 'AA0000000010',
+    gpioCount: 10,
+    gpioNames: ['courtyard_west_light', 'strip_light', 'corridor_long_light', 'fan', 'water_pump', 'atomizer', 'safety_switch', 'clothes_servo', 'fire_sensor', 'help_button'],
+    gpioStates: new Array(10).fill(0),
+    sensors: { soil_mv: 1450, light_mv: 2800, fire_status: 0, rain_status: 0, help_status: 0 },
+  },
 ];
 
 const CMD = {
@@ -53,6 +63,8 @@ const CMD = {
   BROADCAST_LIGHTS_OFF: 0x32,
   BROADCAST_LIGHTS_ON: 0x33,
   EMERGENCY: 0x34,
+  SET_AUTO_MODE: 0x35,
+  FIRE_RESET: 0x36,
 };
 
 function buildResponsePacket(cmd, deviceId, gpioIndex, value) {
@@ -65,11 +77,11 @@ function buildResponsePacket(cmd, deviceId, gpioIndex, value) {
   return buf;
 }
 
-function buildAnnounceV2Packet(deviceName) {
+function buildAnnounceV2Packet(deviceName, gpioCount = 9) {
   const buf = Buffer.alloc(28);
   buf.writeUInt8(CMD.ANNOUNCE_V2, 0);
   buf.writeUInt8(0, 1);
-  buf.writeUInt8(9, 2);  // gpio_count
+  buf.writeUInt8(gpioCount, 2);
   buf.writeUInt8(0, 3);
   // device_name at offset 4, 24 bytes - use ASCII only to avoid UTF-8 issues
   const asciiName = deviceName.replace(/[^\x00-\x7F]/g, '');
@@ -124,14 +136,20 @@ async function runSimulator() {
     });
 
     // 发送 ANNOUNCE_V2
-    const announceBuf = buildAnnounceV2Packet(device.name);
+    const announceBuf = buildAnnounceV2Packet(device.name, device.gpioCount);
     client.publish(`xiaozhi/iot/announce/${device.mac}`, announceBuf, { qos: 1 });
     console.log(`  [${device.displayName}] 已发送 ANNOUNCE_V2`);
 
     // 上报传感器数据（三楼）
     if (device.sensors) {
       const sensorTypes = [0, 1, 2, 3, 4];
-      const sensorValues = [device.sensors.smoke_mv, device.sensors.rain_mv, device.sensors.fire_status, device.sensors.rain_status, device.sensors.help_status];
+      const sensorValues = [
+        device.sensors.smoke_mv ?? device.sensors.soil_mv ?? 0,
+        device.sensors.rain_mv ?? device.sensors.light_mv ?? 0,
+        device.sensors.fire_status,
+        device.sensors.rain_status,
+        device.sensors.help_status
+      ];
       for (let i = 0; i < sensorTypes.length; i++) {
         const sensorBuf = buildSensorPacket(device.deviceId, sensorTypes[i], sensorValues[i]);
         client.publish(`xiaozhi/iot/sensor/${device.mac}`, sensorBuf, { qos: 0 });
@@ -222,6 +240,16 @@ async function runSimulator() {
 
         case CMD.EMERGENCY:
           console.log(`      -> EMERGENCY! (value=${value})`);
+          break;
+
+        case CMD.SET_AUTO_MODE:
+          device.autoMode = value === 1;
+          console.log(`      -> AUTO_MODE = ${device.autoMode ? 'ON' : 'OFF'}`);
+          break;
+
+        case CMD.FIRE_RESET:
+          if (device.sensors) device.sensors.fire_status = 0;
+          console.log(`      -> FIRE_RESET`);
           break;
 
         case CMD.HEARTBEAT:

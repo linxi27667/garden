@@ -1,0 +1,13 @@
+{
+  "name": "garden-control-panel",
+  "version": "1.0.0",
+  "description": "智慧庭院控制面板",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "mqtt": "^5.0.0",
+    "ws": "^8.0.0"
+  }
+}

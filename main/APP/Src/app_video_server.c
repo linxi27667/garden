@@ -60,7 +60,7 @@ static void HW_Camera_Config_Get(camera_config_t *config) {
 static esp_err_t stream_handler(httpd_req_t *req) {
     camera_fb_t * fb = NULL;
     esp_err_t res = ESP_OK;
-    char * part_buf[64];
+    char part_buf[64];
 
     // 告诉浏览器：这是一段连续的视频流，不要挂断！
     res = httpd_resp_set_type(req, _STREAM_CONTENT_TYPE);
@@ -99,8 +99,8 @@ static esp_err_t stream_handler(httpd_req_t *req) {
                 ESP_LOGE(TAG, "JPEG compression failed");
                 res = ESP_FAIL;
             } else {
-                size_t hlen = snprintf((char *)part_buf, 64, _STREAM_PART, jpg_len);
-                res = httpd_resp_send_chunk(req, (const char *)part_buf, hlen);
+                size_t hlen = snprintf(part_buf, sizeof(part_buf), _STREAM_PART, jpg_len);
+                res = httpd_resp_send_chunk(req, part_buf, hlen);
                 if(res == ESP_OK){
                     res = httpd_resp_send_chunk(req, (const char *)jpg_buf, jpg_len);
                 }

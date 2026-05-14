@@ -29,20 +29,22 @@ void BSP_UART_Process_Event(uart_t *uart) {
     if (uart->Hw_Wait_Event != NULL && uart->Hw_Wait_Event(uart, &event_size)) {
         
         // 2. 有数据来了！开辟缓冲区把数据装下
-        uint8_t *dtmp = (uint8_t *)malloc(uart->rx_buf_size);
+        uint8_t *dtmp = (uint8_t *)malloc(uart->rx_buf_size + 1);
         if (dtmp != NULL) {
             
-            // 3. 指挥底层去读真实的数据
             if (uart->Hw_Read != NULL) {
                 uint32_t len = uart->Hw_Read(uart, dtmp, event_size);
-                dtmp[len] = '\0'; // 强制封口变字符串
+                if (len < uart->rx_buf_size) {
+                    dtmp[len] = '\0';
+                } else {
+                    dtmp[uart->rx_buf_size] = '\0';
+                }
                 
-                // 4. 触发业务回调！(把数据甩给大模型或者电机)
                 if (uart->On_Data_Received != NULL) {
                     uart->On_Data_Received(dtmp, len);
                 }
             }
-            free(dtmp); // 用完释放，绝不漏内存！
+            free(dtmp);
         }
     }
 }

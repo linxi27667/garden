@@ -45,6 +45,7 @@ typedef struct {
     uint8_t mac_addr[6];
     uint8_t gpio_count;
     iot_gpio_config_t gpios[IOT_MAX_REMOTE_GPIOS];
+    uint8_t gpio_states[IOT_MAX_REMOTE_GPIOS];
     bool online;
     uint32_t last_heartbeat_ms;
     iot_sensor_state_t sensors;

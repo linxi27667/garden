@@ -85,7 +85,7 @@ bool BSP_WiFi_Init_And_Connect(bsp_wifi_config_t *config) {
     wifi_config_t wifi_config = {
         .sta = {
             // 自动检测认证模式，支持WPA/WPA2/WPA3
-            .threshold.authmode = WIFI_AUTH_OPEN,
+            .threshold.authmode = WIFI_AUTH_WPA2_PSK,
         },
     };
     strncpy((char *)wifi_config.sta.ssid, config->ssid, sizeof(wifi_config.sta.ssid));

@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#f5f0eb">
+<title>智慧庭院</title>
+<link rel="manifest" href="data:application/json;base64,eyJuYW1lIjoi5pm66IO95a6k6L6FIiwic2hvcnRfbmFtZSI6IuaZmuiDveWupOi+hSIsInN0YXJ0X3VybCI6Ii4iLCJkaXNwbGF5Ijoic3RhbmRhbG9uZSIsImJhY2tncm91bmRfY29sb3IiOiIjZjVmMGViIiwidGhlbWVfY29sb3IiOiIjZjVmMGViIn0=">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#f5f0eb;--card:#ffffff;--text:#2c2c2c;--text2:#8a8a8a;--text3:#b5b5b5;
+  --green:#5a9e6f;--green-light:#e8f3eb;--green-dark:#3d7a4f;
+  --orange:#d4895a;--orange-light:#fdf0e8;
+  --blue:#5a8fb4;--blue-light:#e8f0f7;
+  --red:#c75a5a;--red-light:#f7e8e8;
+  --gray:#e8e4df;--shadow:0 2px 12px rgba(0,0,0,0.06);
+  --radius:16px;--transition:all 0.3s cubic-bezier(0.4,0,0.2,1)
+}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
+.header{padding:24px 32px 16px;display:flex;align-items:center;justify-content:space-between;max-width:1200px;margin:0 auto}
+.header-left{display:flex;align-items:center;gap:12px}
+.logo{width:40px;height:40px;background:var(--green);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px}
+.header-title{font-size:22px;font-weight:700;letter-spacing:-0.5px}
+.header-sub{font-size:13px;color:var(--text2);margin-top:2px}
+.conn-status{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text2);padding:8px 16px;background:var(--card);border-radius:20px;box-shadow:var(--shadow)}
+.conn-dot{width:8px;height:8px;border-radius:50%;background:var(--text3);transition:var(--transition)}
+.conn-dot.online{background:var(--green);box-shadow:0 0 8px rgba(90,158,111,0.4)}
+.conn-dot.connecting{background:var(--orange);animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+.main{max-width:1200px;margin:0 auto;padding:0 32px 32px}
+.section-title{font-size:15px;font-weight:600;color:var(--text2);margin:24px 0 12px;text-transform:uppercase;letter-spacing:1px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px}
+.card{background:var(--card);border-radius:var(--radius);padding:20px;box-shadow:var(--shadow);transition:var(--transition);position:relative;overflow:hidden}
+.card:hover{transform:translateY(-2px);box-shadow:0 4px 20px rgba(0,0,0,0.1)}
+.card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.card-icon{width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px}
+.card-icon.green{background:var(--green-light)}
+.card-icon.orange{background:var(--orange-light)}
+.card-icon.blue{background:var(--blue-light)}
+.card-icon.red{background:var(--red-light)}
+.card-name{font-size:15px;font-weight:600;flex:1;margin-left:12px}
+.card-status{font-size:12px;color:var(--text3);margin-left:8px}
+.toggle{position:relative;width:52px;height:28px;cursor:pointer}
+.toggle input{opacity:0;width:0;height:0}
+.toggle-track{position:absolute;top:0;left:0;right:0;bottom:0;background:var(--gray);border-radius:14px;transition:var(--transition)}
+.toggle input:checked+.toggle-track{background:var(--green)}
+.toggle-thumb{position:absolute;top:2px;left:2px;width:24px;height:24px;background:#fff;border-radius:50%;transition:var(--transition);box-shadow:0 1px 4px rgba(0,0,0,0.15)}
+.toggle input:checked~.toggle-thumb{left:26px}
+.slider-wrap{margin-top:12px}
+.slider-label{display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-bottom:6px}
+.slider{-webkit-appearance:none;width:100%;height:6px;border-radius:3px;background:var(--gray);outline:none;transition:var(--transition)}
+.slider::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;background:var(--green);cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,0.2)}
+.slider:disabled::-webkit-slider-thumb{background:var(--text3)}
+.btn-group{display:flex;gap:8px;margin-top:8px}
+.btn{flex:1;padding:10px 0;border:none;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;transition:var(--transition);font-family:inherit}
+.btn-green{background:var(--green-light);color:var(--green-dark)}
+.btn-green:hover,.btn-green.active{background:var(--green);color:#fff}
+.btn-orange{background:var(--orange-light);color:var(--orange)}
+.btn-orange:hover,.btn-orange.active{background:var(--orange);color:#fff}
+.sensor-value{font-size:36px;font-weight:700;letter-spacing:-1px;margin:8px 0 4px}
+.sensor-value .unit{font-size:14px;font-weight:400;color:var(--text2);margin-left:2px}
+.sensor-bar{height:6px;border-radius:3px;background:var(--gray);overflow:hidden;margin-top:8px}
+.sensor-bar-fill{height:100%;border-radius:3px;transition:width 0.6s ease}
+.sensor-bar-fill.green{background:var(--green)}
+.sensor-bar-fill.orange{background:var(--orange)}
+.sensor-bar-fill.blue{background:var(--blue)}
+.rain-badge{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;margin-top:8px}
+.rain-badge.dry{background:var(--green-light);color:var(--green-dark)}
+.rain-badge.wet{background:var(--blue-light);color:var(--blue)}
+.quick-actions{display:flex;gap:12px;margin-top:8px}
+.quick-btn{flex:1;padding:14px;border:2px solid var(--gray);border-radius:var(--radius);background:var(--card);font-size:14px;font-weight:600;cursor:pointer;transition:var(--transition);font-family:inherit;color:var(--text)}
+.quick-btn:hover{border-color:var(--green);color:var(--green)}
+.quick-btn:active{transform:scale(0.97)}
+.quick-btn.on{border-color:var(--green);background:var(--green-light);color:var(--green-dark)}
+.quick-btn.off{border-color:var(--red);background:var(--red-light);color:var(--red)}
+.auto-card{display:flex;align-items:center;justify-content:space-between;padding:20px 24px}
+.auto-info{display:flex;align-items:center;gap:12px}
+.auto-icon{font-size:24px}
+.auto-text .auto-title{font-size:15px;font-weight:600}
+.auto-text .auto-desc{font-size:12px;color:var(--text2);margin-top:2px}
+.config-bar{position:fixed;bottom:0;left:0;right:0;background:var(--card);padding:12px 32px;display:flex;align-items:center;justify-content:center;gap:12px;box-shadow:0 -2px 12px rgba(0,0,0,0.06);z-index:100}
+.config-bar label{font-size:13px;color:var(--text2)}
+.config-bar input{border:1px solid var(--gray);border-radius:8px;padding:6px 12px;font-size:13px;width:280px;font-family:inherit;outline:none;transition:var(--transition)}
+.config-bar input:focus{border-color:var(--green)}
+.config-bar button{padding:6px 16px;border:none;border-radius:8px;background:var(--green);color:#fff;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;transition:var(--transition)}
+.config-bar button:hover{background:var(--green-dark)}
+.footer-space{height:60px}
+@media(max-width:768px){
+  .header{padding:16px 20px 12px}
+  .main{padding:0 20px 20px}
+  .cards{grid-template-columns:repeat(2,1fr);gap:12px}
+  .card{padding:16px}
+  .sensor-value{font-size:28px}
+  .config-bar{padding:10px 16px;gap:8px}
+  .config-bar input{width:180px}
+}
+@media(max-width:480px){
+  .cards{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <div class="logo">🌿</div>
+    <div>
+      <div class="header-title">智慧庭院</div>
+      <div class="header-sub">Smart Garden Control</div>
+    </div>
+  </div>
+  <div class="conn-status">
+    <span class="conn-dot" id="connDot"></span>
+    <span id="connText">未连接</span>
+  </div>
+</div>
+
+<div class="main">
+  <div class="section-title">灯光控制</div>
+  <div class="cards">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon green">💡</div>
+        <span class="card-name">西庭灯</span>
+        <span class="card-status" id="corridor_status">已关闭</span>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="corridor_light" onchange="sendCmd('corridor_light',this.checked?'on':'off')">
+        <span class="toggle-track"></span>
+        <span class="toggle-thumb"></span>
+      </label>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon orange">✨</div>
+        <span class="card-name">庭院灯带</span>
+        <span class="card-status" id="strip_status">已关闭</span>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="strip_light" onchange="sendCmd('strip_light',this.checked?'on':'off')">
+        <span class="toggle-track"></span>
+        <span class="toggle-thumb"></span>
+      </label>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon green">🌱</div>
+        <span class="card-name">长廊灯</span>
+        <span class="card-status" id="veg_status">已关闭</span>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="veg_light" onchange="sendCmd('veg_light',this.checked?'on':'off')">
+        <span class="toggle-track"></span>
+        <span class="toggle-thumb"></span>
+      </label>
+      <div class="slider-wrap">
+        <div class="slider-label"><span>亮度</span><span id="veg_duty_label">0%</span></div>
+        <input type="range" class="slider" id="veg_duty" min="0" max="100" value="0" disabled oninput="updateVegDuty(this.value)">
+      </div>
+    </div>
+  </div>
+
+  <div class="section-title">设备控制</div>
+  <div class="cards">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon blue">🌀</div>
+        <span class="card-name">风扇</span>
+        <span class="card-status" id="fan_status">已关闭</span>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="fan" onchange="sendCmd('fan',this.checked?'on':'off')">
+        <span class="toggle-track"></span>
+        <span class="toggle-thumb"></span>
+      </label>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon orange">👕</div>
+        <span class="card-name">晾衣架</span>
+        <span class="card-status" id="servo_status">已晾出</span>
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-green active" id="servo_hang" onclick="sendCmd('servo','hang')">晾衣服</button>
+        <button class="btn btn-orange" id="servo_collect" onclick="sendCmd('servo','collect')">收衣服</button>
+      </div>
+    </div>
+
+    <div class="card auto-card">
+      <div class="auto-info">
+        <span class="auto-icon">🤖</span>
+        <div class="auto-text">
+          <div class="auto-title">自动模式</div>
+          <div class="auto-desc">雨天收衣 · 光控补光</div>
+        </div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="auto_mode" checked onchange="sendCmd('auto_mode',null,this.checked)">
+        <span class="toggle-track"></span>
+        <span class="toggle-thumb"></span>
+      </label>
+    </div>
+  </div>
+
+  <div class="section-title">快捷操作</div>
+  <div class="quick-actions">
+    <button class="quick-btn on" onclick="sendCmd('all_lights','on')">🌙 全部开灯</button>
+    <button class="quick-btn off" onclick="sendCmd('all_lights','off')">☀️ 全部关灯</button>
+  </div>
+
+  <div class="section-title">环境监测</div>
+  <div class="cards">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon blue">💧</div>
+        <span class="card-name">土壤湿度</span>
+      </div>
+      <div class="sensor-value" id="soil_value">--<span class="unit">%</span></div>
+      <div class="sensor-bar"><div class="sensor-bar-fill blue" id="soil_bar" style="width:0%"></div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon orange">☀️</div>
+        <span class="card-name">光照强度</span>
+      </div>
+      <div class="sensor-value" id="light_value">--<span class="unit">%</span></div>
+      <div class="sensor-bar"><div class="sensor-bar-fill orange" id="light_bar" style="width:0%"></div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon blue">🌧️</div>
+        <span class="card-name">雨滴状态</span>
+      </div>
+      <div id="rain_status"><span class="rain-badge dry">☀️ 晴天干燥</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="footer-space"></div>
+
+<div class="config-bar">
+  <label>MQTT服务器:</label>
+  <input type="text" id="mqttUrl" value="ws://8.134.167.240:9001" placeholder="ws://host:port">
+  <button onclick="connectMQTT()">连接</button>
+</div>
+
+<script src="https://unpkg.com/mqtt@5.10.4/dist/mqtt.min.js"></script>
+<script>
+var client = null;
+var vegDutyTimeout = null;
+
+function connectMQTT() {
+  var url = document.getElementById('mqttUrl').value.trim();
+  if (!url) return;
+  if (client) { client.end(true); client = null; }
+  setConn('connecting');
+  try {
+    client = mqtt.connect(url, {
+      clientId: 'garden_web_' + Math.random().toString(16).substr(2, 8),
+      clean: true,
+      reconnectPeriod: 5000,
+      connectTimeout: 10000
+    });
+    client.on('connect', function() {
+      setConn('online');
+      client.subscribe(['xiaozhi/garden/status', 'xiaozhi/garden/sensors'], {qos: 0});
+    });
+    client.on('message', function(topic, payload) {
+      try {
+        var data = JSON.parse(payload.toString());
+        if (topic.indexOf('/status') > -1) handleStatus(data);
+        else if (topic.indexOf('/sensors') > -1) handleSensors(data);
+      } catch(e) { console.error('Parse error:', e); }
+    });
+    client.on('error', function(err) {
+      console.error('MQTT error:', err);
+      setConn('offline');
+    });
+    client.on('close', function() {
+      setConn('offline');
+    });
+    client.on('reconnect', function() {
+      setConn('connecting');
+    });
+  } catch(e) {
+    console.error('Connect error:', e);
+    setConn('offline');
+  }
+}
+
+function setConn(state) {
+  var dot = document.getElementById('connDot');
+  var text = document.getElementById('connText');
+  dot.className = 'conn-dot ' + state;
+  if (state === 'online') text.textContent = '已连接';
+  else if (state === 'connecting') text.textContent = '连接中...';
+  else text.textContent = '未连接';
+}
+
+function sendCmd(device, action, value) {
+  if (!client || !client.connected) { alert('MQTT未连接，请先配置服务器'); return; }
+  var cmd = {device: device};
+  if (action !== null) cmd.action = action;
+  if (value !== undefined) cmd.value = value;
+  client.publish('xiaozhi/garden/cmd', JSON.stringify(cmd));
+}
+
+function handleStatus(data) {
+  setToggle('corridor_light', data.corridor_light === 1);
+  document.getElementById('corridor_status').textContent = data.corridor_light ? '已开启' : '已关闭';
+
+  setToggle('strip_light', data.strip_light === 1);
+  document.getElementById('strip_status').textContent = data.strip_light ? '已开启' : '已关闭';
+
+  setToggle('veg_light', data.veg_light === 1);
+  document.getElementById('veg_status').textContent = data.veg_light ? '已开启' : '已关闭';
+
+  var vegSlider = document.getElementById('veg_duty');
+  var vegLabel = document.getElementById('veg_duty_label');
+  vegSlider.disabled = data.veg_light !== 1;
+  vegSlider.value = data.veg_pwm_duty || 0;
+  vegLabel.textContent = (data.veg_pwm_duty || 0) + '%';
+
+  setToggle('fan', data.fan === 1);
+  document.getElementById('fan_status').textContent = data.fan ? '已开启' : '已关闭';
+
+  var servoHang = document.getElementById('servo_hang');
+  var servoCollect = document.getElementById('servo_collect');
+  if (data.servo === 1) {
+    servoHang.classList.add('active');
+    servoCollect.classList.remove('active');
+    document.getElementById('servo_status').textContent = '已晾出';
+  } else {
+    servoHang.classList.remove('active');
+    servoCollect.classList.add('active');
+    document.getElementById('servo_status').textContent = '已收回';
+  }
+
+  setToggle('auto_mode', data.auto_mode === true);
+}
+
+function handleSensors(data) {
+  var soil = data.soil || 0;
+  document.getElementById('soil_value').innerHTML = soil + '<span class="unit">%</span>';
+  document.getElementById('soil_bar').style.width = soil + '%';
+
+  var light = data.light || 0;
+  document.getElementById('light_value').innerHTML = light + '<span class="unit">%</span>';
+  document.getElementById('light_bar').style.width = light + '%';
+
+  var rainEl = document.getElementById('rain_status');
+  if (data.rain_state === 'wet' || data.rain === 1) {
+    rainEl.innerHTML = '<span class="rain-badge wet">🌧️ 检测到雨水</span>';
+  } else {
+    rainEl.innerHTML = '<span class="rain-badge dry">☀️ 晴天干燥</span>';
+  }
+}
+
+function setToggle(id, checked) {
+  var el = document.getElementById(id);
+  if (el && el.checked !== checked) el.checked = checked;
+}
+
+function updateVegDuty(val) {
+  document.getElementById('veg_duty_label').textContent = val + '%';
+  if (vegDutyTimeout) clearTimeout(vegDutyTimeout);
+  vegDutyTimeout = setTimeout(function() {
+    sendCmd('veg_light', 'on');
+  }, 300);
+}
+
+connectMQTT();
+</script>
+</body>
+</html>

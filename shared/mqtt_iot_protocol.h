@@ -13,6 +13,7 @@
 #define MQTT_TOPIC_ANNOUNCE         "xiaozhi/iot/announce"
 #define MQTT_TOPIC_ANNOUNCE_PREFIX  "xiaozhi/iot/announce/"
 #define MQTT_TOPIC_SENSOR_PREFIX    "xiaozhi/iot/sensor/"
+#define MQTT_TOPIC_EMERGENCY_PREFIX "xiaozhi/iot/emergency/"
 
 /* ================= 命令码定义 (与原ESP-NOW一致) ================= */
 typedef enum {
@@ -32,7 +33,11 @@ typedef enum {
     IOT_CMD_BROADCAST_ALL_ON = 0x31,
     IOT_CMD_BROADCAST_LIGHTS_OFF = 0x32,
     IOT_CMD_BROADCAST_LIGHTS_ON = 0x33,
-    IOT_CMD_EMERGENCY = 0x34
+    IOT_CMD_EMERGENCY = 0x34,
+    IOT_CMD_SET_AUTO_MODE = 0x35,
+    IOT_CMD_FIRE_RESET = 0x36,
+    IOT_CMD_RAIN_ALERT = 0x37,
+    IOT_CMD_HELP_ALERT = 0x38
 } iot_command_t;
 
 /* ================= 数据包结构 (与原ESP-NOW一致) ================= */
@@ -73,6 +78,7 @@ typedef enum {
 #define DEVICE_ID_FIRSTFLOOR    "1"
 #define DEVICE_ID_SECONDFLOOR   "2"
 #define DEVICE_ID_THIRDFLOOR    "3"
+#define DEVICE_ID_GARDEN        "10"
 
 /* ================= 工具函数 ================= */
 static inline void mac_to_string(const uint8_t* mac, char* str, size_t len) {

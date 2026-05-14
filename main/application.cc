@@ -653,6 +653,45 @@ void Application::Alert(const char* status, const char* message, const char* emo
     }
 }
 
+bool Application::SayText(const char* text, const char* status, const char* emotion) {
+    if (text == nullptr || text[0] == '\0') {
+        return false;
+    }
+
+    Alert(status, text, emotion);
+
+    if (protocol_ == nullptr) {
+        ESP_LOGW(TAG, "TTS skipped: protocol is not ready");
+        return false;
+    }
+
+    if (!protocol_->IsAudioChannelOpened() && !protocol_->OpenAudioChannel()) {
+        ESP_LOGW(TAG, "TTS skipped: audio channel open failed");
+        return false;
+    }
+
+    cJSON* root = cJSON_CreateObject();
+    if (root == nullptr) {
+        return false;
+    }
+
+    if (!protocol_->session_id().empty()) {
+        cJSON_AddStringToObject(root, "session_id", protocol_->session_id().c_str());
+    }
+    cJSON_AddStringToObject(root, "type", "tts");
+    cJSON_AddStringToObject(root, "text", text);
+
+    char* message = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (message == nullptr) {
+        return false;
+    }
+
+    bool ok = protocol_->SendJsonMessage(message);
+    cJSON_free(message);
+    return ok;
+}
+
 void Application::DismissAlert() {
     if (GetDeviceState() == kDeviceStateIdle) {
         auto display = Board::GetInstance().GetDisplay();
@@ -1119,4 +1158,3 @@ void Application::ResetProtocol() {
         protocol_.reset();
     });
 }
-

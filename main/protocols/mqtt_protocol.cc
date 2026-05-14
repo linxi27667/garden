@@ -90,12 +90,17 @@ bool MqttProtocol::StartMqttClient(bool report_error) {
         esp_timer_start_once(reconnect_timer_, MQTT_RECONNECT_INTERVAL_MS * 1000);
     });
 
-    mqtt_->OnConnected([this]() {
-        if (on_connected_ != nullptr) {
-            on_connected_();
-        }
-        esp_timer_stop(reconnect_timer_);
-    });
+mqtt_->OnConnected([this]() {
+         if (on_connected_ != nullptr) {
+             on_connected_();
+         }
+         esp_timer_stop(reconnect_timer_);
+
+         // FIX #7: 订阅从机传感器上报主题，用于接收并转发传感器数据
+         if (on_subscribe_topics_ != nullptr) {
+             on_subscribe_topics_();
+         }
+     });
 
     mqtt_->OnMessage([this](const std::string& topic, const std::string& payload) {
         cJSON* root = cJSON_Parse(payload.c_str());

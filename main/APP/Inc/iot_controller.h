@@ -47,11 +47,23 @@ bool App_IOT_Scenario_Homecoming(const char* first_floor_device, const char* all
 bool App_IOT_Scenario_LeaveHome(const char* first_floor_device);
 bool App_IOT_Scenario_GoodNight(const char* all_floors_device);
 bool App_IOT_Scenario_Emergency(void);
+bool App_IOT_Fire_Reset(void);
 bool App_IOT_Control_Servo_Angle(const char* device_name, uint8_t servo_index, uint8_t angle);
 bool App_IOT_Scenario_Rain_Collect_Clothes(const char* third_floor_device);
 bool App_IOT_Scenario_Ventilate(const char* third_floor_device, uint8_t window_angle, uint8_t fan_on);
 void App_IOT_Get_Sensors_Json(char* buffer, int buffer_size);
 void App_IOT_Get_Event_Log_Json(char* buffer, int buffer_size);
+
+bool App_IOT_MQTT_Publish(const char* topic, const char* data, int len);
+bool App_IOT_MQTT_Subscribe(const char* topic);
+
+typedef void (*iot_mqtt_cmd_callback_t)(const char* topic, const char* data, int data_len);
+typedef void (*iot_emergency_alert_cb_t)(const char* type, const char* detail);
+
+void App_IOT_Register_Mqtt_Cmd_Callback(const char* topic_prefix, iot_mqtt_cmd_callback_t callback);
+void App_IOT_Register_Emergency_Alert_Callback(iot_emergency_alert_cb_t cb);
+
+void App_IOT_Emergency_Alert(const char* type, const char* detail);
 
 #ifdef __cplusplus
 }

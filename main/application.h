@@ -82,6 +82,7 @@ public:
      */
     void Alert(const char* status, const char* message, const char* emotion = "", const std::string_view& sound = "");
     void DismissAlert();
+    bool SayText(const char* text, const char* status = "系统提醒", const char* emotion = "alert");
 
     void AbortSpeaking(AbortReason reason);
 

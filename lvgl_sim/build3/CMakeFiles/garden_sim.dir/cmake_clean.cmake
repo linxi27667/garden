@@ -1,0 +1,41 @@
+file(REMOVE_RECURSE
+  "CMakeFiles/garden_sim.dir/main/UI/core/ui_app.c.obj"
+  "CMakeFiles/garden_sim.dir/main/UI/core/ui_app.c.obj.d"
+  "CMakeFiles/garden_sim.dir/main/UI/core/ui_events.c.obj"
+  "CMakeFiles/garden_sim.dir/main/UI/core/ui_events.c.obj.d"
+  "CMakeFiles/garden_sim.dir/main/UI/core/ui_styles.c.obj"
+  "CMakeFiles/garden_sim.dir/main/UI/core/ui_styles.c.obj.d"
+  "CMakeFiles/garden_sim.dir/main/UI/fonts/ui_font.c.obj"
+  "CMakeFiles/garden_sim.dir/main/UI/fonts/ui_font.c.obj.d"
+  "CMakeFiles/garden_sim.dir/main/UI/model/garden_model.c.obj"
+  "CMakeFiles/garden_sim.dir/main/UI/model/garden_model.c.obj.d"
+  "CMakeFiles/garden_sim.dir/main/UI/pages/ui_page_ctrl.c.obj"
+  "CMakeFiles/garden_sim.dir/main/UI/pages/ui_page_ctrl.c.obj.d"
+  "CMakeFiles/garden_sim.dir/main/UI/pages/ui_page_data.c.obj"
+  "CMakeFiles/garden_sim.dir/main/UI/pages/ui_page_data.c.obj.d"
+  "CMakeFiles/garden_sim.dir/main/UI/pages/ui_page_garden.c.obj"
+  "CMakeFiles/garden_sim.dir/main/UI/pages/ui_page_garden.c.obj.d"
+  "CMakeFiles/garden_sim.dir/main/UI/pages/ui_page_set.c.obj"
+  "CMakeFiles/garden_sim.dir/main/UI/pages/ui_page_set.c.obj.d"
+  "CMakeFiles/garden_sim.dir/main/UI/services/ui_export.c.obj"
+  "CMakeFiles/garden_sim.dir/main/UI/services/ui_export.c.obj.d"
+  "CMakeFiles/garden_sim.dir/main/UI/services/ui_i18n.c.obj"
+  "CMakeFiles/garden_sim.dir/main/UI/services/ui_i18n.c.obj.d"
+  "CMakeFiles/garden_sim.dir/main/UI/utils/ui_theme.c.obj"
+  "CMakeFiles/garden_sim.dir/main/UI/utils/ui_theme.c.obj.d"
+  "CMakeFiles/garden_sim.dir/main/UI/widgets/ui_header.c.obj"
+  "CMakeFiles/garden_sim.dir/main/UI/widgets/ui_header.c.obj.d"
+  "CMakeFiles/garden_sim.dir/main/UI/widgets/ui_tabbar.c.obj"
+  "CMakeFiles/garden_sim.dir/main/UI/widgets/ui_tabbar.c.obj.d"
+  "CMakeFiles/garden_sim.dir/main/src/SDL_main.c.obj"
+  "CMakeFiles/garden_sim.dir/main/src/SDL_main.c.obj.d"
+  "garden_sim.exe"
+  "garden_sim.exe.manifest"
+  "garden_sim.pdb"
+  "libgarden_sim.dll.a"
+)
+
+# Per-language clean rules from dependency scanning.
+foreach(lang C)
+  include(CMakeFiles/garden_sim.dir/cmake_clean_${lang}.cmake OPTIONAL)
+endforeach()

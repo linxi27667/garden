@@ -1,0 +1,29 @@
+lvgl/CMakeFiles/lvgl.dir/src/draw/vg_lite/lv_draw_vg_lite_triangle.c.obj: \
+ E:\MCU\lvgl_tools\lv_port_pc_vscode\lv_port_pc_vscode\lvgl\src\draw\vg_lite\lv_draw_vg_lite_triangle.c \
+ E:/MCU/lvgl_tools/lv_port_pc_vscode/lv_port_pc_vscode/lvgl/src/misc/lv_area_private.h \
+ E:/MCU/lvgl_tools/lv_port_pc_vscode/lv_port_pc_vscode/lvgl/src/misc/lv_area.h \
+ E:/MCU/lvgl_tools/lv_port_pc_vscode/lv_port_pc_vscode/lvgl/src/lv_conf_internal.h \
+ E:/MCU/esp32/xaiozhi1111111111111111111111111/garden/lvgl_sim/lv_conf.h \
+ E:/MCU/lvgl_tools/mingw64/mingw64/lib/gcc/x86_64-w64-mingw32/14.2.0/include/stdint.h \
+ E:/MCU/lvgl_tools/mingw64/mingw64/x86_64-w64-mingw32/include/stdint.h \
+ E:/MCU/lvgl_tools/mingw64/mingw64/x86_64-w64-mingw32/include/crtdefs.h \
+ E:/MCU/lvgl_tools/mingw64/mingw64/x86_64-w64-mingw32/include/corecrt.h \
+ E:/MCU/lvgl_tools/mingw64/mingw64/x86_64-w64-mingw32/include/_mingw.h \
+ E:/MCU/lvgl_tools/mingw64/mingw64/x86_64-w64-mingw32/include/_mingw_mac.h \
+ E:/MCU/lvgl_tools/mingw64/mingw64/x86_64-w64-mingw32/include/_mingw_secapi.h \
+ E:/MCU/lvgl_tools/mingw64/mingw64/x86_64-w64-mingw32/include/vadefs.h \
+ E:/MCU/lvgl_tools/mingw64/mingw64/x86_64-w64-mingw32/include/sdks/_mingw_ddk.h \
+ E:/MCU/lvgl_tools/mingw64/mingw64/lib/gcc/x86_64-w64-mingw32/14.2.0/include/stddef.h \
+ E:/MCU/lvgl_tools/mingw64/mingw64/x86_64-w64-mingw32/include/stddef.h \
+ E:/MCU/lvgl_tools/lv_port_pc_vscode/lv_port_pc_vscode/lvgl/src/misc/lv_types.h \
+ E:/MCU/lvgl_tools/mingw64/mingw64/lib/gcc/x86_64-w64-mingw32/14.2.0/include/stdbool.h \
+ E:/MCU/lvgl_tools/mingw64/mingw64/x86_64-w64-mingw32/include/inttypes.h \
+ E:/MCU/lvgl_tools/mingw64/mingw64/lib/gcc/x86_64-w64-mingw32/14.2.0/include/limits.h \
+ E:/MCU/lvgl_tools/mingw64/mingw64/lib/gcc/x86_64-w64-mingw32/14.2.0/include/syslimits.h \
+ E:/MCU/lvgl_tools/mingw64/mingw64/x86_64-w64-mingw32/include/limits.h \
+ E:/MCU/lvgl_tools/mingw64/mingw64/lib/gcc/x86_64-w64-mingw32/14.2.0/include/stdarg.h \
+ E:/MCU/lvgl_tools/mingw64/mingw64/x86_64-w64-mingw32/include/stdarg.h \
+ E:/MCU/lvgl_tools/mingw64/mingw64/x86_64-w64-mingw32/include/_mingw_stdarg.h \
+ E:/MCU/lvgl_tools/lv_port_pc_vscode/lv_port_pc_vscode/lvgl/src/misc/lv_math.h \
+ E:\MCU\lvgl_tools\lv_port_pc_vscode\lv_port_pc_vscode\lvgl\src\draw\vg_lite\lv_draw_vg_lite.h \
+ E:/MCU/lvgl_tools/lv_port_pc_vscode/lv_port_pc_vscode/lvgl/src/lv_conf_internal.h

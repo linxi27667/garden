@@ -24,6 +24,8 @@ const CMD = {
   BROADCAST_LIGHTS_OFF: 0x32,
   BROADCAST_LIGHTS_ON: 0x33,
   EMERGENCY: 0x34,
+  SET_AUTO_MODE: 0x35,
+  FIRE_RESET: 0x36,
 };
 
 // ================= 测试用例定义 =================
@@ -66,10 +68,21 @@ const TEST_CASES = [
   { name: '三楼-晾衣架展开(SET_SERVO servo2=90)', topic: 'xiaozhi/iot/cmd/3', cmd: CMD.SET_SERVO, deviceId: 3, gpioIndex: 8, value: 90, expectResponse: true },
 
   // === 6. 场景命令 ===
+  { name: '庭院-西庭灯开(SET_LIGHT light0=1)', topic: 'xiaozhi/iot/cmd/10', cmd: CMD.SET_LIGHT, deviceId: 10, gpioIndex: 0, value: 1, expectResponse: true },
+  { name: '庭院-西庭灯关(SET_LIGHT light0=0)', topic: 'xiaozhi/iot/cmd/10', cmd: CMD.SET_LIGHT, deviceId: 10, gpioIndex: 0, value: 0, expectResponse: true },
+  { name: '庭院-长廊灯开(SET_LIGHT light2=1)', topic: 'xiaozhi/iot/cmd/10', cmd: CMD.SET_LIGHT, deviceId: 10, gpioIndex: 2, value: 1, expectResponse: true },
+  { name: '庭院-水泵开(SET_RELAY relay1=1)', topic: 'xiaozhi/iot/cmd/10', cmd: CMD.SET_RELAY, deviceId: 10, gpioIndex: 1, value: 1, expectResponse: true },
+  { name: '庭院-水泵关(SET_RELAY relay1=0)', topic: 'xiaozhi/iot/cmd/10', cmd: CMD.SET_RELAY, deviceId: 10, gpioIndex: 1, value: 0, expectResponse: true },
+  { name: '庭院-晾衣架展开(SET_SERVO servo0=180)', topic: 'xiaozhi/iot/cmd/10', cmd: CMD.SET_SERVO, deviceId: 10, gpioIndex: 6, value: 180, expectResponse: true },
+  { name: '庭院-晾衣架收回(SET_SERVO servo0=0)', topic: 'xiaozhi/iot/cmd/10', cmd: CMD.SET_SERVO, deviceId: 10, gpioIndex: 6, value: 0, expectResponse: true },
+  { name: '庭院-自动模式开(SET_AUTO_MODE)', topic: 'xiaozhi/iot/cmd/10', cmd: CMD.SET_AUTO_MODE, deviceId: 10, gpioIndex: 0, value: 1, expectResponse: true },
+  { name: '庭院-火灾复位(FIRE_RESET)', topic: 'xiaozhi/iot/cmd/10', cmd: CMD.FIRE_RESET, deviceId: 10, gpioIndex: 0, value: 0, expectResponse: true },
+
+  // === 7. 场景命令 ===
   { name: '场景-回家(ANNOUNCE_V2)', topic: 'xiaozhi/iot/cmd/broadcast', cmd: CMD.ANNOUNCE_V2, deviceId: 0, gpioIndex: 0, value: 0, expectResponse: true },
   { name: '场景-紧急(EMERGENCY)', topic: 'xiaozhi/iot/cmd/broadcast', cmd: CMD.EMERGENCY, deviceId: 0, gpioIndex: 0, value: 1, expectResponse: true },
 
-  // === 7. 心跳 ===
+  // === 8. 心跳 ===
   { name: '心跳(HEARTBEAT)', topic: 'xiaozhi/iot/cmd/broadcast', cmd: CMD.HEARTBEAT, deviceId: 0, gpioIndex: 0, value: 0, expectResponse: false },
 ];
 

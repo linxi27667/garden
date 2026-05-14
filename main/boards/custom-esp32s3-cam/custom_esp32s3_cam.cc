@@ -6,27 +6,27 @@
 #include "button.h"
 #include "config.h"
 #include "led/single_led.h"
-#include "esp32_camera.h"
 #include "mcp_server.h"
-#include "yolo_mcp_tool.h"
 #include "iot_mcp_tool.h"
 #include "alarm_mcp_tool.h"
+#include "garden_mcp_tool.h"
 #include "app_mpu6050.h"
 #include "app_buzzer.h"
 #include "app_fall_detect.h"
 #include "wifi_manager.h"
 #include "bsp_mpu6050.h"
 #include "iot_controller.h"
+#include "app_garden.h"
 
 #include <esp_log.h>
 #include <driver/i2c_master.h>
 #include <esp_lcd_panel_ops.h>
 #include <esp_lcd_panel_vendor.h>
-#include <esp_camera.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/semphr.h>
 #include <algorithm>
+#include <cstring>
 #include <sstream>
 #include <vector>
 
@@ -34,12 +34,104 @@
 
 static SemaphoreHandle_t g_i2c_mutex = NULL;
 
+struct SensorAlertScenario {
+    const char* type;
+    const char* status;
+    const char* emotion;
+    const char* text;
+    int beep_count;
+    int beep_ms;
+    int gap_ms;
+};
+
+static const SensorAlertScenario kSensorAlertScenarios[] = {
+    {
+        "fire",
+        "火灾警报",
+        "emergency",
+        "检测到庭院火灾风险，系统已切断安防总闸，并停止水泵和雾化器。请立即确认现场安全。",
+        15,
+        500,
+        200,
+    },
+    {
+        "help",
+        "紧急求助",
+        "alert",
+        "收到庭院求助信号，我已开启庭院照明，请尽快查看现场情况。",
+        10,
+        300,
+        300,
+    },
+    {
+        "rain",
+        "雨天提醒",
+        "rain",
+        "检测到庭院降雨，已自动收回晾衣架并更新庭院状态。",
+        3,
+        180,
+        500,
+    },
+};
+
+static const SensorAlertScenario* FindSensorAlertScenario(const char* type) {
+    if (type == nullptr) {
+        return nullptr;
+    }
+    for (const auto& scenario : kSensorAlertScenarios) {
+        if (strcmp(type, scenario.type) == 0) {
+            return &scenario;
+        }
+    }
+    return nullptr;
+}
+
+static void SensorAlertTask(void* arg) {
+    const auto* scenario = static_cast<const SensorAlertScenario*>(arg);
+    if (scenario == nullptr) {
+        vTaskDelete(nullptr);
+        return;
+    }
+
+    auto& app = Application::GetInstance();
+    app.Schedule([scenario]() {
+#if ENABLE_SENSOR_TTS_ALERT
+        if (!Application::GetInstance().SayText(scenario->text, scenario->status, scenario->emotion)) {
+            Application::GetInstance().Alert(scenario->status, scenario->text, scenario->emotion);
+        }
+#else
+        Application::GetInstance().Alert(scenario->status, scenario->text, scenario->emotion);
+#endif
+    });
+
+    for (int i = 0; i < scenario->beep_count; i++) {
+        App_Buzzer_Beep(scenario->beep_ms);
+        vTaskDelay(pdMS_TO_TICKS(scenario->gap_ms));
+    }
+
+    vTaskDelete(nullptr);
+}
+
+static void DispatchSensorAlert(const char* type, const char* detail) {
+    const SensorAlertScenario* scenario = FindSensorAlertScenario(type);
+    if (scenario == nullptr) {
+        ESP_LOGW(TAG, "Unknown sensor alert type=%s, detail=%s",
+                 type ? type : "null", detail ? detail : "");
+        return;
+    }
+
+    BaseType_t ret = xTaskCreate(SensorAlertTask, "sensor_alert", 4096,
+                                 const_cast<SensorAlertScenario*>(scenario), 4, nullptr);
+    if (ret != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create sensor alert task");
+    }
+}
+
 class CustomEsp32s3Cam : public WifiBoard {
 private:
     i2c_master_bus_handle_t display_i2c_bus_;
     Button boot_button_;
     Display* display_;
-    Esp32Camera* camera_;
     esp_lcd_panel_io_handle_t panel_io_ = nullptr;
     esp_lcd_panel_handle_t panel_ = nullptr;
     TaskHandle_t mpu6050_task_handle_ = nullptr;
@@ -103,37 +195,6 @@ private:
         ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_, true));
 
         display_ = new OledDisplay(panel_io_, panel_, DISPLAY_WIDTH, DISPLAY_HEIGHT, DISPLAY_MIRROR_X, DISPLAY_MIRROR_Y);
-    }
-
-    void InitializeCamera() {
-        camera_config_t config = {};
-        config.pin_d0 = CAMERA_PIN_D0;
-        config.pin_d1 = CAMERA_PIN_D1;
-        config.pin_d2 = CAMERA_PIN_D2;
-        config.pin_d3 = CAMERA_PIN_D3;
-        config.pin_d4 = CAMERA_PIN_D4;
-        config.pin_d5 = CAMERA_PIN_D5;
-        config.pin_d6 = CAMERA_PIN_D6;
-        config.pin_d7 = CAMERA_PIN_D7;
-        config.pin_xclk = CAMERA_PIN_XCLK;
-        config.pin_pclk = CAMERA_PIN_PCLK;
-        config.pin_vsync = CAMERA_PIN_VSYNC;
-        config.pin_href = CAMERA_PIN_HREF;
-        config.pin_sccb_sda = CAMERA_PIN_SIOD;
-        config.pin_sccb_scl = CAMERA_PIN_SIOC;
-        config.sccb_i2c_port = 1;
-        config.pin_pwdn = CAMERA_PIN_PWDN;
-        config.pin_reset = CAMERA_PIN_RESET;
-        config.xclk_freq_hz = XCLK_FREQ_HZ;
-        config.pixel_format = PIXFORMAT_RGB565;
-        config.frame_size = FRAMESIZE_QVGA;
-        config.jpeg_quality = 12;
-        config.fb_count = 2;
-        config.fb_location = CAMERA_FB_IN_PSRAM;
-        config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
-        camera_ = new Esp32Camera(config);
-        camera_->SetHMirror(false);
-        ESP_LOGI(TAG, "Camera initialized");
     }
 
     void InitializeButtons() {
@@ -211,10 +272,8 @@ public:
         InitializeDisplayI2c();
         InitializeSsd1306Display();
         InitializeButtons();
-        InitializeCamera();
         InitializeMpu6050();
         InitializeBuzzer();
-        InitializeYolo();
         StartMpu6050Task();
         InitializeTools();
     }
@@ -236,19 +295,14 @@ public:
             // Wait a bit more for DHCP to complete
             vTaskDelay(pdMS_TO_TICKS(500));
             
-            ESP_LOGI(TAG, "WiFi connected, initializing ESP-NOW...");
+            ESP_LOGI(TAG, "WiFi connected, initializing IoT controller...");
             board->InitializeIot();
-            
+
+            vTaskDelay(pdMS_TO_TICKS(2000));
+            App_Garden_Start();
+
             vTaskDelete(NULL);
         }, "iot_init", 4096, this, 2, NULL);
-    }
-
-    void InitializeYolo() {
-        if (Yolo_Mcp_Init()) {
-            ESP_LOGI(TAG, "YOLO face detection initialized");
-        } else {
-            ESP_LOGW(TAG, "YOLO face detection initialization failed");
-        }
     }
 
     void InitializeIot() {
@@ -257,6 +311,13 @@ public:
         } else {
             ESP_LOGW(TAG, "IOT controller initialization failed");
         }
+
+        App_Garden_Init();
+
+        App_IOT_Register_Emergency_Alert_Callback([](const char* type, const char* detail) {
+            ESP_LOGW(TAG, "Emergency alert callback: type=%s, detail=%s", type, detail);
+            DispatchSensorAlert(type, detail);
+        });
 
         if (Alarm_Mcp_Init()) {
             ESP_LOGI(TAG, "Alarm manager initialized");
@@ -278,48 +339,6 @@ public:
 
     void InitializeTools() {
         auto& mcp_server = McpServer::GetInstance();
-        mcp_server.AddTool("self.camera.detect_face",
-            "Detect human faces in the current camera view. Returns the number of faces found and their positions.\n"
-            "Use this tool when the user asks about detecting or finding faces/people in front of the camera.",
-            PropertyList(),
-            [this](const PropertyList& properties) -> ReturnValue {
-                if (camera_ == nullptr) {
-                    throw std::runtime_error("Camera not available");
-                }
-                
-                if (!camera_->Capture()) {
-                    throw std::runtime_error("Failed to capture photo");
-                }
-                
-                camera_fb_t* fb = esp_camera_fb_get();
-                if (fb == nullptr) {
-                    throw std::runtime_error("Failed to get frame buffer");
-                }
-                
-                yolo_result_t result;
-                bool success = Yolo_Mcp_Detect(fb->buf, fb->width, fb->height, &result);
-                esp_camera_fb_return(fb);
-                
-                if (!success) {
-                    throw std::runtime_error("Face detection failed");
-                }
-                
-                cJSON* json = cJSON_CreateObject();
-                cJSON_AddNumberToObject(json, "face_count", result.count);
-                cJSON* boxes = cJSON_AddArrayToObject(json, "faces");
-                
-                for (int i = 0; i < result.count; i++) {
-                    cJSON* box = cJSON_CreateObject();
-                    cJSON_AddNumberToObject(box, "x", result.boxes[i].x);
-                    cJSON_AddNumberToObject(box, "y", result.boxes[i].y);
-                    cJSON_AddNumberToObject(box, "width", result.boxes[i].w);
-                    cJSON_AddNumberToObject(box, "height", result.boxes[i].h);
-                    cJSON_AddNumberToObject(box, "confidence", result.boxes[i].confidence);
-                    cJSON_AddItemToArray(boxes, box);
-                }
-                
-                return json;
-            });
 
         mcp_server.AddTool("self.iot.set_gpio",
             "Control GPIO outputs on this device or remote ESP32 devices.\n"
@@ -503,10 +522,9 @@ public:
             "【设备-灯映射】\n"
             "  一楼设备: index0=大厅灯\n"
             "  二楼设备: index0=主卧灯, index1=客厅灯, index2=厕所灯\n"
-            "  三楼设备: index0=阳台灯\n"
-            "【用户说\"打开主卧灯\"→ device=二楼设备, index=0】\n"
+            "  三楼设备: index0=阳台灯, index1=三楼灯2, index2=三楼灯3\n"
             "【用户说\"打开阳台灯\"→ device=三楼设备, index=0】\n"
-            "【用户说\"打开客厅灯\"→ device=二楼设备, index=1】",
+            "【用户说\"打开三楼灯2\"→ device=三楼设备, index=1】",
             PropertyList({
                 Property("device", kPropertyTypeString),
                 Property("index", kPropertyTypeInteger),
@@ -536,7 +554,7 @@ public:
             "  device: 设备名（一楼设备/二楼设备/三楼设备）\n"
             "  index: 继电器编号(0-2)\n"
             "  value: true=开/false=关\n"
-            "【设备映射】二楼:index0=风扇。",
+            "【设备映射】二楼:index0=风扇。三楼:index0=风扇(继电器1), index1=继电器2, index2=继电器3。",
             PropertyList({
                 Property("device", kPropertyTypeString),
                 Property("index", kPropertyTypeInteger),
@@ -589,56 +607,6 @@ public:
                 cJSON_AddNumberToObject(json, "angle", angle);
                 cJSON_AddStringToObject(json, "message", success ? "舵机已设置" : "操作失败");
 
-                return json;
-            });
-
-        mcp_server.AddTool("self.iot.clothes_rack",
-            "控制晾衣架升降。用户说'晾衣服'/'收衣服'时使用。Args: device(二楼/三楼设备), action(hang/collect)。\n"
-            "【注意】二楼晾衣架index=0，三楼晾衣架index=2。",
-            PropertyList({
-                Property("device", kPropertyTypeString),
-                Property("action", kPropertyTypeString)
-            }),
-            [](const PropertyList& properties) -> ReturnValue {
-                auto device = properties["device"].value<std::string>();
-                auto action = properties["action"].value<std::string>();
-                
-                uint8_t angle = 0;
-                std::string action_desc;
-                
-                if (action == "hang") {
-                    angle = 180;
-                    action_desc = "晾衣服";
-                } else if (action == "collect") {
-                    angle = 0;
-                    action_desc = "收衣服";
-                } else {
-                    cJSON* json = cJSON_CreateObject();
-                    cJSON_AddBoolToObject(json, "success", false);
-                    cJSON_AddStringToObject(json, "message", "无效操作，请说'晾衣服'或'收衣服'");
-                    return json;
-                }
-                
-                bool success = false;
-                if (device.find("二") != std::string::npos) {
-                    success = App_IOT_Set_Servo_ByIndex(device.c_str(), 0, angle);
-                } else if (device.find("三") != std::string::npos) {
-                    success = App_IOT_Set_Servo_ByIndex(device.c_str(), 2, angle);
-                } else {
-                    cJSON* json = cJSON_CreateObject();
-                    cJSON_AddBoolToObject(json, "success", false);
-                    cJSON_AddStringToObject(json, "message", "未知的设备，请说'二楼设备'或'三楼设备'");
-                    return json;
-                }
-                
-                cJSON* json = cJSON_CreateObject();
-                cJSON_AddBoolToObject(json, "success", success);
-                cJSON_AddStringToObject(json, "device", device.c_str());
-                cJSON_AddStringToObject(json, "action", action_desc.c_str());
-                cJSON_AddNumberToObject(json, "angle", angle);
-                cJSON_AddStringToObject(json, "message", success ? 
-                    (angle == 180 ? "衣服已晾好" : "衣服已收进来") : "操作失败");
-                
                 return json;
             });
 
@@ -804,65 +772,7 @@ public:
                 return json;
             });
 
-        mcp_server.AddTool("self.scene.homing",
-            "回家场景。用户说'我回家了'/'回家模式'时触发，打开一楼大门并打开所有灯。\n"
-            "【注意】此场景会：1)打开一楼大门舵机 2)打开所有楼的灯。",
-            PropertyList(),
-            [](const PropertyList& properties) -> ReturnValue {
-                bool success = Iot_Mcp_Scenario_Homecoming();
-
-                cJSON* json = cJSON_CreateObject();
-                cJSON_AddBoolToObject(json, "success", success);
-                cJSON_AddStringToObject(json, "message", success ?
-                    "欢迎回家！大门已打开，灯已全部点亮" : "操作失败");
-
-                return json;
-            });
-
-        mcp_server.AddTool("self.scene.good_night",
-            "晚安场景。用户说'我睡觉了'/'晚安'时触发，关闭所有灯。\n"
-            "【注意】此场景只关闭灯，不影响继电器和舵机。",
-            PropertyList(),
-            [](const PropertyList& properties) -> ReturnValue {
-                bool success = Iot_Mcp_Scenario_GoodNight();
-
-                cJSON* json = cJSON_CreateObject();
-                cJSON_AddBoolToObject(json, "success", success);
-                cJSON_AddStringToObject(json, "message", success ?
-                    "晚安！所有灯已关闭，祝您好梦" : "操作失败");
-
-                return json;
-            });
-
-        mcp_server.AddTool("self.scene.leave_home",
-            "离家场景。用户说'我出门了'/'关门'/'离家'时触发，关闭一楼大门。\n"
-            "【注意】此场景会关闭一楼大门舵机（角度设为0度）。",
-            PropertyList(),
-            [](const PropertyList& properties) -> ReturnValue {
-                bool success = Iot_Mcp_Scenario_LeaveHome();
-
-                cJSON* json = cJSON_CreateObject();
-                cJSON_AddBoolToObject(json, "success", success);
-                cJSON_AddStringToObject(json, "message", success ?
-                    "大门已关闭，路上注意安全！" : "操作失败");
-
-                return json;
-            });
-
-        mcp_server.AddTool("self.scene.emergency",
-            "紧急求救场景。用户说'救命'/'SOS'时触发，广播求救命令并启动蜂鸣器。",
-            PropertyList(),
-            [](const PropertyList& properties) -> ReturnValue {
-                bool success = Iot_Mcp_Scenario_Emergency();
-                App_Buzzer_Beep_Times(255, 500, 500);
-
-                cJSON* json = cJSON_CreateObject();
-                cJSON_AddBoolToObject(json, "success", success);
-                cJSON_AddStringToObject(json, "message", success ?
-                    "求救信号已发送，蜂鸣器已启动，救援正在路上！" : "求救信号发送失败");
-
-                return json;
-            });
+        Register_Garden_Mcp_Tools();
     }
 
     virtual Led* GetLed() override {
@@ -886,16 +796,12 @@ public:
         return display_;
     }
 
-    virtual Camera* GetCamera() override {
-        return camera_;
-    }
-
     virtual std::string GetBoardType() override {
         return "custom-esp32s3-cam";
     }
 
     virtual std::string GetBoardJson() override {
-        return "{\"type\":\"custom-esp32s3-cam\",\"camera\":true,\"display\":\"oled\",\"mpu6050\":true,\"buzzer\":true}";
+        return "{\"type\":\"custom-esp32s3-cam\",\"display\":\"oled\",\"mpu6050\":true,\"buzzer\":true}";
     }
 
     virtual std::string GetDeviceStatusJson() override {
@@ -904,4 +810,3 @@ public:
 };
 
 DECLARE_BOARD(CustomEsp32s3Cam)
-

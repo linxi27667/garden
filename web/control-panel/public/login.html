@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>智慧控制面板 · 登录</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, 'PingFang SC', 'Helvetica Neue', sans-serif;
+  background: #f5f5f7;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.login-card {
+  background: #fff;
+  border-radius: 20px;
+  padding: 40px 36px 36px;
+  width: 360px;
+  max-width: 90vw;
+  box-shadow: 0 2px 20px rgba(0,0,0,.06);
+  border: 1px solid #e5e5ea;
+  text-align: center;
+}
+.logo {
+  width: 48px; height: 48px;
+  background: linear-gradient(135deg, #34c759, #30d158);
+  border-radius: 14px;
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 16px;
+}
+.logo svg { display: block; }
+h1 { font-size: 20px; font-weight: 700; color: #1d1d1f; margin-bottom: 4px; }
+.sub { font-size: 13px; color: #86868b; margin-bottom: 28px; }
+.input-group { text-align: left; margin-bottom: 20px; }
+.input-group label { display: block; font-size: 13px; font-weight: 500; color: #1d1d1f; margin-bottom: 6px; }
+.input-group input {
+  width: 100%; padding: 10px 14px; border: 1px solid #e5e5ea;
+  border-radius: 10px; font-size: 15px; outline: none;
+  transition: border-color .2s; background: #f9f9fb;
+}
+.input-group input:focus { border-color: #007aff; }
+.btn-login {
+  width: 100%; padding: 12px; border: none; border-radius: 10px;
+  background: #007aff; color: #fff; font-size: 15px; font-weight: 600;
+  cursor: pointer; transition: all .2s;
+}
+.btn-login:hover { background: #0066d6; }
+.btn-login:active { transform: scale(.97); }
+.btn-login:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+.error { color: #ff3b30; font-size: 13px; margin-top: 12px; display: none; }
+.loading { display: none; margin-top: 12px; font-size: 13px; color: #86868b; }
+.loading::after { content: '...'; animation: dots 1.5s infinite; }
+@keyframes dots { 0% { content: '.'; } 33% { content: '..'; } 66% { content: '...'; } }
+</style>
+</head>
+<body>
+<div class="login-card">
+  <div class="logo">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+  </div>
+  <h1>智慧控制面板</h1>
+  <div class="sub">请输入密码以继续</div>
+  <div class="input-group">
+    <label>密码</label>
+    <input type="password" id="password" placeholder="请输入密码" onkeydown="if(event.key==='Enter')login()">
+  </div>
+  <button class="btn-login" id="loginBtn" onclick="login()">登录</button>
+  <div class="error" id="error"></div>
+  <div class="loading" id="loading">验证中</div>
+</div>
+<script>
+function login() {
+  const pwd = document.getElementById('password').value;
+  const btn = document.getElementById('loginBtn');
+  const err = document.getElementById('error');
+  const loading = document.getElementById('loading');
+  if (!pwd) { err.textContent = '请输入密码'; err.style.display = ''; return; }
+  btn.disabled = true; loading.style.display = ''; err.style.display = 'none';
+  fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pwd }) })
+    .then(r => r.json())
+    .then(d => {
+      if (d.success) {
+        localStorage.setItem('token', d.token);
+        window.location.href = '/index.html';
+      } else {
+        err.textContent = '密码错误'; err.style.display = ''; btn.disabled = false; loading.style.display = 'none';
+      }
+    })
+    .catch(() => { err.textContent = '连接失败'; err.style.display = ''; btn.disabled = false; loading.style.display = 'none'; });
+}
+</script>
+</body>
+</html>

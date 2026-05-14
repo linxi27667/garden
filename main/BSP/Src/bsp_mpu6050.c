@@ -111,16 +111,32 @@ uint8_t MPU6050_Init_Device(mpu_t *mpu) {
     }
 
     write_data = 0x07;
-    MPU6050_Write_Reg(mpu, MPU_SMPLRT_DIV_REG, write_data);
+    ret = MPU6050_Write_Reg(mpu, MPU_SMPLRT_DIV_REG, write_data);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set sample rate divider");
+        return 1;
+    }
 
     write_data = 0x06;
-    MPU6050_Write_Reg(mpu, MPU_CONFIG_REG, write_data);
+    ret = MPU6050_Write_Reg(mpu, MPU_CONFIG_REG, write_data);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set config register");
+        return 1;
+    }
 
     write_data = 0x00;
-    MPU6050_Write_Reg(mpu, MPU_ACCEL_CONFIG_REG, write_data);
+    ret = MPU6050_Write_Reg(mpu, MPU_ACCEL_CONFIG_REG, write_data);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set accel config");
+        return 1;
+    }
 
     write_data = 0x18;
-    MPU6050_Write_Reg(mpu, MPU_GYRO_CONFIG_REG, write_data);
+    ret = MPU6050_Write_Reg(mpu, MPU_GYRO_CONFIG_REG, write_data);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set gyro config");
+        return 1;
+    }
 
     ESP_LOGI(TAG, "MPU6050 initialized successfully");
     return 0;

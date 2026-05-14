@@ -1,0 +1,1 @@
+ lvgl/lib/liblvgl.a lvgl/lib/liblvgl_thorvg.a "E:/MCU/lvgl_tools/SDL2-2.30.8/x86_64-w64-mingw32/lib/libSDL2main.a" lvgl/lib/liblvgl.a "E:/MCU/lvgl_tools/SDL2-2.30.8/x86_64-w64-mingw32/lib/libSDL2.dll.a" -lshell32 -Wl,--undefined=WinMain -lkernel32 -luser32 -lgdi32 -lwinspool -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32 

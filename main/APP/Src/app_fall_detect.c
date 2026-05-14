@@ -4,6 +4,8 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <esp_log.h>
+#include <esp_timer.h>
+#include <math.h>
 
 static const char *TAG = "FALL_DETECT";
 
@@ -22,11 +24,10 @@ void App_Fall_Detect_Update(float accel_x, float accel_y, float accel_z) {
         return;
     }
 
-    int accel_int = (int)(accel_x * 100) ^ (int)(accel_y * 100) ^ (int)(accel_z * 100);
-    int accel_sum = (int)(accel_x * 100) + (int)(accel_y * 100) + (int)(accel_z * 100);
+    float accel_mag = sqrtf(accel_x * accel_x + accel_y * accel_y + accel_z * accel_z);
 
     if (g_alarm_active) {
-        uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
+        uint32_t current_time = (uint32_t)(esp_timer_get_time() / 1000);
         if (current_time - g_last_fall_time > FALL_RECOVERY_TIME_MS) {
             g_alarm_active = false;
             g_high_count = 0;
@@ -36,13 +37,13 @@ void App_Fall_Detect_Update(float accel_x, float accel_y, float accel_z) {
         return;
     }
 
-    if (accel_sum > 350 || accel_sum < -350) {
+    if (accel_mag > FALL_DETECT_FALL_G || accel_mag < 0.3f) {
         g_high_count++;
         if (g_high_count >= FALL_CONFIRM_COUNT) {
             g_alarm_active = true;
-            g_last_fall_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
+            g_last_fall_time = (uint32_t)(esp_timer_get_time() / 1000);
             g_high_count = 0;
-            ESP_LOGW(TAG, "FALL DETECTED! accel_sum=%d", accel_sum);
+            ESP_LOGW(TAG, "FALL DETECTED! accel_mag=%.2fG", accel_mag);
             App_Buzzer_On();
         }
     } else {

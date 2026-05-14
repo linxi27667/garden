@@ -10,12 +10,22 @@
 #include "freertos/task.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <stdarg.h>
+#include <cJSON.h>
 
 static const char* TAG = "APP_IOT";
 
 static esp_mqtt_client_handle_t s_mqtt_client = NULL;
 
 static iot_controller_t g_iot_controller;
+
+#define MAX_MQTT_CMD_CALLBACKS 4
+static struct {
+    char topic_prefix[64];
+    iot_mqtt_cmd_callback_t callback;
+} s_mqtt_cmd_callbacks[MAX_MQTT_CMD_CALLBACKS];
+static int s_mqtt_cmd_callback_count = 0;
 
 static void HW_MQTT_Recv_Callback(const char* topic, int topic_len, const char* data, int data_len);
 static bool HW_MQTT_Init(void);
@@ -49,13 +59,36 @@ static int HW_Gpio_Read(void* port, uint16_t pin) {
     return gpio_get_level((gpio_num_t)pin);
 }
 
+static bool Dispatch_MQTT_Callbacks(const char* topic, const char* data, int data_len) {
+    bool dispatched = false;
+
+    if (topic == NULL) {
+        return false;
+    }
+
+    for (int i = 0; i < s_mqtt_cmd_callback_count; i++) {
+        if (s_mqtt_cmd_callbacks[i].callback != NULL &&
+            strstr(topic, s_mqtt_cmd_callbacks[i].topic_prefix) != NULL) {
+            s_mqtt_cmd_callbacks[i].callback(topic, data, data_len);
+            dispatched = true;
+        }
+    }
+
+    return dispatched;
+}
+
 static void HW_MQTT_Recv_Callback(const char* topic, int topic_len, const char* data, int data_len) {
-    ESP_LOGI(TAG, "MQTT received %d bytes on topic: %.*s", data_len, topic_len, topic);
+    ESP_LOGD(TAG, "MQTT received %d bytes on topic: %.*s", data_len, topic_len, topic);
 
     char topic_buf[128] = {0};
     if (topic_len > 0 && topic_len < (int)sizeof(topic_buf)) {
         memcpy(topic_buf, topic, topic_len);
         topic_buf[topic_len] = '\0';
+    }
+
+    bool callback_dispatched = Dispatch_MQTT_Callbacks(topic_buf, data, data_len);
+    if (strstr(topic_buf, "xiaozhi/garden/") != NULL && callback_dispatched) {
+        return;
     }
 
     uint8_t src_mac[6] = {0};
@@ -69,6 +102,8 @@ static void HW_MQTT_Recv_Callback(const char* topic, int topic_len, const char* 
         mac_str = topic_buf + strlen(MQTT_TOPIC_ANNOUNCE_PREFIX);
     } else if (strstr(topic_buf, MQTT_TOPIC_SENSOR_PREFIX) != NULL) {
         mac_str = topic_buf + strlen(MQTT_TOPIC_SENSOR_PREFIX);
+    } else if (strstr(topic_buf, MQTT_TOPIC_EMERGENCY_PREFIX) != NULL) {
+        mac_str = topic_buf + strlen(MQTT_TOPIC_EMERGENCY_PREFIX);
     }
     
     if (mac_str != NULL && strlen(mac_str) == 12) {
@@ -92,6 +127,35 @@ static void HW_MQTT_Recv_Callback(const char* topic, int topic_len, const char* 
         }
     }
 
+    if (strstr(topic_buf, MQTT_TOPIC_SENSOR_PREFIX) != NULL && data_len > 0 && data[0] == '{') {
+        IOT_Process_Sensor_Data(&g_iot_controller, src_mac, (const uint8_t*)data, data_len);
+        return;
+    }
+
+    if (strstr(topic_buf, MQTT_TOPIC_EMERGENCY_PREFIX) != NULL && data_len > 0) {
+        cJSON* root = cJSON_ParseWithLength(data, data_len);
+        if (root) {
+            cJSON* type_item = cJSON_GetObjectItem(root, "emergency_type");
+            cJSON* detail_item = cJSON_GetObjectItem(root, "detail");
+            int emergency_type = type_item ? type_item->valueint : 0;
+            const char* detail = detail_item ? detail_item->valuestring : "unknown";
+
+            const char* type_str = "unknown";
+            if (emergency_type == 0) type_str = "fire";
+            else if (emergency_type == 1) type_str = "help";
+            else if (emergency_type == 2) type_str = "rain";
+
+            ESP_LOGW(TAG, "EMERGENCY received from slave: type=%s, detail=%s", type_str, detail);
+
+            IOT_Update_Heartbeat(&g_iot_controller, src_mac);
+
+            App_IOT_Emergency_Alert(type_str, detail);
+
+            cJSON_Delete(root);
+        }
+        return;
+    }
+
     IOT_Process_Remote_Response(&g_iot_controller, src_mac, (const uint8_t*)data, data_len);
 }
 
@@ -106,6 +170,8 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
             esp_mqtt_client_subscribe(s_mqtt_client, "xiaozhi/iot/heartbeat/+", 0);
             esp_mqtt_client_subscribe(s_mqtt_client, "xiaozhi/iot/announce/+", 1);
             esp_mqtt_client_subscribe(s_mqtt_client, "xiaozhi/iot/sensor/+", 0);
+            esp_mqtt_client_subscribe(s_mqtt_client, "xiaozhi/iot/emergency/+", 1);
+            esp_mqtt_client_subscribe(s_mqtt_client, "xiaozhi/garden/cmd", 0);
             break;
         case MQTT_EVENT_DISCONNECTED:
             ESP_LOGW(TAG, "MQTT disconnected");
@@ -123,7 +189,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
 
 static bool HW_MQTT_Init(void) {
     esp_mqtt_client_config_t mqtt_cfg = {
-        .broker.address.uri = "mqtt://broker.emqx.io",  // 公网测试 broker
+        .broker.address.uri = "mqtt://8.134.167.240",  // 自己的服务器
         .broker.address.port = 1883,
         .credentials.client_id = "xiaozhi_master_esp32",   // 唯一 ID 避免冲突
         .session.keepalive = 30,
@@ -376,10 +442,19 @@ void App_IOT_Get_All_Status(char* buffer, int buffer_size) {
         }
 
         offset += snprintf(buffer + offset, buffer_size - offset,
-                          "{\"name\":\"%s\",\"online\":%s,\"gpio_count\":%d}",
+                          "{\"name\":\"%s\",\"online\":%s,\"gpio_count\":%d,\"gpios\":[",
                           display_name,
                           g_iot_controller.remote_devices[d].online ? "true" : "false",
                           g_iot_controller.remote_devices[d].gpio_count);
+
+        for (int g = 0; g < g_iot_controller.remote_devices[d].gpio_count && offset < buffer_size - 50; g++) {
+            if (g > 0) offset += snprintf(buffer + offset, buffer_size - offset, ",");
+            offset += snprintf(buffer + offset, buffer_size - offset,
+                              "{\"index\":%d,\"value\":%d}",
+                              g, g_iot_controller.remote_devices[d].gpio_states[g]);
+        }
+
+        offset += snprintf(buffer + offset, buffer_size - offset, "]}");
     }
 
     offset += snprintf(buffer + offset, buffer_size - offset, "]}");
@@ -447,6 +522,23 @@ bool App_IOT_Scenario_Emergency(void) {
     return false;
 }
 
+bool App_IOT_Fire_Reset(void) {
+    ESP_LOGI(TAG, "[FIRE_RESET] Resetting fire status to NORMAL");
+    iot_command_packet_t cmd = {
+        .command = IOT_CMD_FIRE_RESET,
+        .device_id = 0,
+        .gpio_index = 0,
+        .value = 0,
+        .reserved = {0}
+    };
+    if (g_iot_controller.Mqtt_Publish) {
+        bool result = g_iot_controller.Mqtt_Publish(MQTT_TOPIC_CMD_BROADCAST, (const uint8_t*)&cmd, sizeof(cmd));
+        ESP_LOGI(TAG, "[FIRE_RESET] Fire reset broadcast sent, result=%d", result);
+        return result;
+    }
+    return false;
+}
+
 bool App_IOT_Control_Servo_Angle(const char* device_name, uint8_t servo_index, uint8_t angle) {
     int device_index = IOT_Find_Device_By_Name(&g_iot_controller, device_name);
     if (device_index < 0) {
@@ -463,10 +555,12 @@ bool App_IOT_Scenario_Rain_Collect_Clothes(const char* third_floor_device) {
         ESP_LOGW(TAG, "Device '%s' not found", third_floor_device);
         return false;
     }
-    ESP_LOGI(TAG, "[SCENARIO] Rain: collecting clothes, closing servo1 on 3rd floor");
-    bool success = IOT_Set_Servo(&g_iot_controller, device_index, 2, 0);
+    ESP_LOGI(TAG, "[SCENARIO] Rain: collecting clothes, closing all servos on 3rd floor");
+    bool success = true;
     for (int i = 0; i < 3; i++) {
-        IOT_Set_Servo(&g_iot_controller, device_index, i, 0);
+        if (!IOT_Set_Servo(&g_iot_controller, device_index, i, 0)) {
+            success = false;
+        }
     }
     return success;
 }
@@ -491,4 +585,48 @@ void App_IOT_Get_Sensors_Json(char* buffer, int buffer_size) {
 
 void App_IOT_Get_Event_Log_Json(char* buffer, int buffer_size) {
     IOT_Get_Event_Log_Json(&g_iot_controller, buffer, buffer_size);
+}
+
+bool App_IOT_MQTT_Publish(const char* topic, const char* data, int len) {
+    if (s_mqtt_client == NULL) return false;
+    int msg_id = esp_mqtt_client_publish(s_mqtt_client, topic, data, len, 1, 0);
+    return msg_id >= 0;
+}
+
+bool App_IOT_MQTT_Subscribe(const char* topic) {
+    if (s_mqtt_client == NULL) return false;
+    int msg_id = esp_mqtt_client_subscribe(s_mqtt_client, topic, 0);
+    return msg_id >= 0;
+}
+
+void App_IOT_Register_Mqtt_Cmd_Callback(const char* topic_prefix, iot_mqtt_cmd_callback_t callback) {
+    if (s_mqtt_cmd_callback_count >= MAX_MQTT_CMD_CALLBACKS) return;
+    if (topic_prefix == NULL || callback == NULL) return;
+    strncpy(s_mqtt_cmd_callbacks[s_mqtt_cmd_callback_count].topic_prefix,
+            topic_prefix, sizeof(s_mqtt_cmd_callbacks[0].topic_prefix) - 1);
+    s_mqtt_cmd_callbacks[s_mqtt_cmd_callback_count].topic_prefix[
+        sizeof(s_mqtt_cmd_callbacks[0].topic_prefix) - 1] = '\0';
+    s_mqtt_cmd_callbacks[s_mqtt_cmd_callback_count].callback = callback;
+    s_mqtt_cmd_callback_count++;
+    ESP_LOGI(TAG, "Registered MQTT cmd callback for prefix: %s", topic_prefix);
+}
+
+static iot_emergency_alert_cb_t s_emergency_alert_cb = NULL;
+
+void App_IOT_Register_Emergency_Alert_Callback(iot_emergency_alert_cb_t cb) {
+    s_emergency_alert_cb = cb;
+}
+
+void App_IOT_Emergency_Alert(const char* type, const char* detail) {
+    ESP_LOGW(TAG, "=== EMERGENCY ALERT: type=%s, detail=%s ===", type, detail);
+
+    IOT_Log_Event(&g_iot_controller, "紧急事件: %s - %s", type, detail);
+
+    if (strcmp(type, "fire") == 0) {
+        App_IOT_Scenario_Emergency();
+    }
+
+    if (s_emergency_alert_cb != NULL) {
+        s_emergency_alert_cb(type, detail);
+    }
 }

@@ -52,6 +52,7 @@ private:
     uint32_t local_sequence_;
     uint32_t remote_sequence_;
     esp_timer_handle_t reconnect_timer_;
+    std::function<void()> on_subscribe_topics_ = nullptr;
 
     bool StartMqttClient(bool report_error=false);
     void ParseServerHello(const cJSON* root);

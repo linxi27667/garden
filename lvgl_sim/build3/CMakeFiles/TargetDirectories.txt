@@ -1,0 +1,17 @@
+E:/MCU/esp32/xaiozhi1111111111111111111111111/garden/lvgl_sim/build3/CMakeFiles/garden_sim.dir
+E:/MCU/esp32/xaiozhi1111111111111111111111111/garden/lvgl_sim/build3/CMakeFiles/edit_cache.dir
+E:/MCU/esp32/xaiozhi1111111111111111111111111/garden/lvgl_sim/build3/CMakeFiles/rebuild_cache.dir
+E:/MCU/esp32/xaiozhi1111111111111111111111111/garden/lvgl_sim/build3/CMakeFiles/list_install_components.dir
+E:/MCU/esp32/xaiozhi1111111111111111111111111/garden/lvgl_sim/build3/CMakeFiles/install.dir
+E:/MCU/esp32/xaiozhi1111111111111111111111111/garden/lvgl_sim/build3/CMakeFiles/install/local.dir
+E:/MCU/esp32/xaiozhi1111111111111111111111111/garden/lvgl_sim/build3/CMakeFiles/install/strip.dir
+E:/MCU/esp32/xaiozhi1111111111111111111111111/garden/lvgl_sim/build3/lvgl/CMakeFiles/lvgl.dir
+E:/MCU/esp32/xaiozhi1111111111111111111111111/garden/lvgl_sim/build3/lvgl/CMakeFiles/lvgl_thorvg.dir
+E:/MCU/esp32/xaiozhi1111111111111111111111111/garden/lvgl_sim/build3/lvgl/CMakeFiles/lvgl_examples.dir
+E:/MCU/esp32/xaiozhi1111111111111111111111111/garden/lvgl_sim/build3/lvgl/CMakeFiles/lvgl_demos.dir
+E:/MCU/esp32/xaiozhi1111111111111111111111111/garden/lvgl_sim/build3/lvgl/CMakeFiles/edit_cache.dir
+E:/MCU/esp32/xaiozhi1111111111111111111111111/garden/lvgl_sim/build3/lvgl/CMakeFiles/rebuild_cache.dir
+E:/MCU/esp32/xaiozhi1111111111111111111111111/garden/lvgl_sim/build3/lvgl/CMakeFiles/list_install_components.dir
+E:/MCU/esp32/xaiozhi1111111111111111111111111/garden/lvgl_sim/build3/lvgl/CMakeFiles/install.dir
+E:/MCU/esp32/xaiozhi1111111111111111111111111/garden/lvgl_sim/build3/lvgl/CMakeFiles/install/local.dir
+E:/MCU/esp32/xaiozhi1111111111111111111111111/garden/lvgl_sim/build3/lvgl/CMakeFiles/install/strip.dir
