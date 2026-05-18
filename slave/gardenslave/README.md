@@ -12,11 +12,10 @@
 
 ### 传感器采集
 - 土壤湿度（ADC 采集，GPIO1）
-- 光照强度（ADC 采集，GPIO3）
-- 雨滴检测（光照阈值判断）
-- 火灾检测（GPIO10 中断，烟雾传感器）
-- 求助按钮（GPIO11 中断）
-- 温湿度（DHT11，GPIO8）
+- 雨滴检测（ADC 采集，GPIO4）→ 独立通道，物理隔离
+- 火灾检测（GPIO2 中断，火焰传感器，复用原光照引脚）
+- 求助按钮（GPIO48 中断）
+- 温湿度（DHT11，GPIO38）
 - 5 秒周期 JSON 上报至 MQTT
 
 ### 智能自动化
@@ -42,20 +41,20 @@
 
 | GPIO | 名称 | 功能 | 说明 |
 |------|------|------|------|
-| GPIO2 | corridor_light | 西庭灯 | 数字输出 |
-| GPIO4 | strip_light | 庭院灯带 | 数字输出 |
-| GPIO5 | veg_light | 长廊灯 | 数字输出 |
-| GPIO6 | fan_relay | 风扇继电器 | 数字输出 |
-| GPIO7 | water_pump | 水泵继电器 | 数字输出 |
-| GPIO15 | atomizer | 雾化器继电器 | 数字输出 |
-| GPIO16 | safety_switch | 安防总闸 | NC常闭端，高电平断开 |
+| GPIO11 | courtyard_west_light | 西庭灯 | 数字输出 |
+| GPIO12 | strip_light | 庭院灯带 | 数字输出 |
+| GPIO13 | corridor_long_light | 长廊灯 | 数字输出 |
+| GPIO14 | fan | 风扇继电器 | 数字输出 |
+| GPIO15 | water_pump | 水泵继电器 | 数字输出 |
+| GPIO16 | atomizer | 雾化器继电器 | 数字输出 |
+| GPIO17 | safety_switch | 安防总闸 | NC常闭端，高电平断开 |
 | GPIO18 | clothes_servo | 晾衣架舵机 | LEDC PWM |
-| GPIO10 | fire_sensor | 火灾传感器 | 下降沿中断 |
-| GPIO11 | help_button | 求助按钮 | 下降沿中断 |
-| GPIO8 | dht11 | 温湿度传感器 | 单总线 |
+| GPIO2 | fire_sensor | 火焰传感器 | 下降沿中断，复用原光照引脚 |
+| GPIO48 | help_button | 求助按钮 | 下降沿中断 |
+| GPIO38 | dht11 | 温湿度传感器 | 单总线 |
 | GPIO1 | soil_adc | 土壤湿度 | ADC1_CH0 |
-| GPIO3 | light_adc | 光照强度 | ADC1_CH2 |
-| GPIO17 | asr_tx | ASR语音模块 | UART1 TX |
+| GPIO4 | rain_adc | 雨滴检测 | ADC1_CH3 |
+| GPIO21 | asr_tx | ASR语音模块 | UART1 TX，避免占用 ESP32-S3 UART0 日志脚 GPIO43/44 |
 
 ## WiFi 配置
 
@@ -93,6 +92,8 @@ idf.py -p COM3 flash monitor
 | 命令 | 值 | 说明 |
 |------|-----|------|
 | IOT_CMD_SET_GPIO | 0x01 | 设置 GPIO |
+| IOT_CMD_GET_GPIO | 0x02 | 获取单路 GPIO 状态 |
+| IOT_CMD_GET_ALL_GPIO | 0x03 | 获取全部 GPIO 状态 |
 | IOT_CMD_SET_LIGHT | 0x11 | 设置灯光 |
 | IOT_CMD_SET_RELAY | 0x12 | 设置继电器 |
 | IOT_CMD_SET_SERVO | 0x10 | 设置舵机角度 |
@@ -110,7 +111,7 @@ idf.py -p COM3 flash monitor
 ```json
 {
   "soil_mv": 1234,
-  "light_mv": 2345,
+  "rain_mv": 1850,
   "fire_status": 0,
   "rain_status": 0,
   "help_status": 0,

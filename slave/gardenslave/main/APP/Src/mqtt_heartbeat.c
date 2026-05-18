@@ -10,7 +10,7 @@
 
 static const char* TAG = "MQTT_HB";
 
-#define HEARTBEAT_INTERVAL_MS   30000
+#define HEARTBEAT_INTERVAL_MS   10000
 
 void Heartbeat_Task(void* arg) {
     vTaskDelay(pdMS_TO_TICKS(5000));
@@ -19,7 +19,7 @@ void Heartbeat_Task(void* arg) {
         esp_mqtt_client_handle_t client = MQTT_Get_Client();
         const char* mac_str = MQTT_Get_MAC_Str();
         
-        if (client != NULL && mac_str != NULL) {
+        if (client != NULL && mac_str != NULL && MQTT_Is_Connected()) {
             iot_heartbeat_packet_t heartbeat = {
                 .command = IOT_CMD_HEARTBEAT,
                 .device_id = 0,
@@ -32,6 +32,11 @@ void Heartbeat_Task(void* arg) {
             snprintf(topic, sizeof(topic), MQTT_TOPIC_HEARTBEAT_PREFIX "%s", mac_str);
             esp_mqtt_client_publish(client, topic, (const char*)&heartbeat, sizeof(heartbeat), 0, 0);
             ESP_LOGD(TAG, "Heartbeat sent");
+        } else {
+            static uint32_t skip_count = 0;
+            if ((skip_count++ % 6) == 0) {
+                ESP_LOGW(TAG, "MQTT not connected, heartbeat skipped");
+            }
         }
 
         vTaskDelay(pdMS_TO_TICKS(HEARTBEAT_INTERVAL_MS));

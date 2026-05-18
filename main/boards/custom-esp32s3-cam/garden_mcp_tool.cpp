@@ -6,14 +6,6 @@
 
 static const char* TAG = "GARDEN_MCP";
 
-bool Garden_Mcp_Init(void) {
-    ESP_LOGI(TAG, "Garden MCP tool initialized (local + MQTT mode)");
-    return true;
-}
-
-void Garden_Mcp_Start(void) {
-}
-
 void Register_Garden_Mcp_Tools(void) {
     auto& mcp_server = McpServer::GetInstance();
 
@@ -32,11 +24,11 @@ void Register_Garden_Mcp_Tools(void) {
             bool value = properties["value"].value<bool>();
 
             if (light == "corridor_light" || light == "courtyard_west_light") {
-                App_Garden_Set_Corridor_Light(value ? GARDEN_LIGHT_ON : GARDEN_LIGHT_OFF);
+                App_Garden_Set_Corridor_Light(value ? GARDEN_SWITCH_ON : GARDEN_SWITCH_OFF);
             } else if (light == "strip_light") {
-                App_Garden_Set_Strip_Light(value ? GARDEN_LIGHT_ON : GARDEN_LIGHT_OFF);
+                App_Garden_Set_Strip_Light(value ? GARDEN_SWITCH_ON : GARDEN_SWITCH_OFF);
             } else if (light == "veg_light" || light == "corridor_long_light") {
-                App_Garden_Set_Veg_Light(value ? GARDEN_LIGHT_ON : GARDEN_LIGHT_OFF);
+                App_Garden_Set_Veg_Light(value ? GARDEN_SWITCH_ON : GARDEN_SWITCH_OFF);
             } else {
                 cJSON* json = cJSON_CreateObject();
                 cJSON_AddBoolToObject(json, "success", false);
@@ -61,7 +53,7 @@ void Register_Garden_Mcp_Tools(void) {
         }),
         [](const PropertyList& properties) -> ReturnValue {
             bool value = properties["value"].value<bool>();
-            App_Garden_Set_Fan(value ? GARDEN_LIGHT_ON : GARDEN_LIGHT_OFF);
+            App_Garden_Set_Fan(value ? GARDEN_SWITCH_ON : GARDEN_SWITCH_OFF);
 
             cJSON* json = cJSON_CreateObject();
             cJSON_AddBoolToObject(json, "success", true);
@@ -112,7 +104,7 @@ void Register_Garden_Mcp_Tools(void) {
         }),
         [](const PropertyList& properties) -> ReturnValue {
             bool value = properties["value"].value<bool>();
-            App_Garden_Set_Water_Pump(value ? GARDEN_LIGHT_ON : GARDEN_LIGHT_OFF);
+            App_Garden_Set_Water_Pump(value ? GARDEN_SWITCH_ON : GARDEN_SWITCH_OFF);
 
             cJSON* json = cJSON_CreateObject();
             cJSON_AddBoolToObject(json, "success", true);
@@ -131,7 +123,7 @@ void Register_Garden_Mcp_Tools(void) {
         }),
         [](const PropertyList& properties) -> ReturnValue {
             bool value = properties["value"].value<bool>();
-            App_Garden_Set_Atomizer(value ? GARDEN_LIGHT_ON : GARDEN_LIGHT_OFF);
+            App_Garden_Set_Atomizer(value ? GARDEN_SWITCH_ON : GARDEN_SWITCH_OFF);
 
             cJSON* json = cJSON_CreateObject();
             cJSON_AddBoolToObject(json, "success", true);
@@ -161,7 +153,7 @@ void Register_Garden_Mcp_Tools(void) {
         PropertyList(),
         [](const PropertyList& properties) -> ReturnValue {
             App_IOT_Fire_Reset();
-            App_Garden_Set_Safety_Switch(GARDEN_LIGHT_OFF);
+            App_Garden_Set_Safety_Switch(GARDEN_SWITCH_OFF);
 
             cJSON* json = cJSON_CreateObject();
             cJSON_AddBoolToObject(json, "success", true);
@@ -174,7 +166,7 @@ void Register_Garden_Mcp_Tools(void) {
         "返回西庭灯、庭院灯带、长廊灯、风扇、舵机、水泵、雾化器、安防总闸、火灾状态的实时数据。",
         PropertyList(),
         [](const PropertyList& properties) -> ReturnValue {
-            char buffer[512];
+            char buffer[1024];
             App_Garden_Get_Status_Json(buffer, sizeof(buffer));
 
             cJSON* json = cJSON_Parse(buffer);
@@ -187,10 +179,10 @@ void Register_Garden_Mcp_Tools(void) {
 
     mcp_server.AddTool("self.garden.get_sensors",
         "获取智慧庭院传感器数据。\n"
-        "返回土壤湿度、光照强度、雨滴状态、火灾状态、求助状态、温度、湿度。",
+        "返回土壤湿度、雨滴状态、火灾状态、求助状态、温度、湿度。",
         PropertyList(),
         [](const PropertyList& properties) -> ReturnValue {
-            char buffer[512];
+            char buffer[768];
             App_Garden_Get_Sensors_Json(buffer, sizeof(buffer));
 
             cJSON* json = cJSON_Parse(buffer);
@@ -203,7 +195,7 @@ void Register_Garden_Mcp_Tools(void) {
 
     mcp_server.AddTool("self.garden.set_auto_mode",
         "设置智慧庭院自动模式。\n"
-        "自动模式下：光控调光、雨天自动收衣、高温自动开风扇/雾化、干燥自动开雾化。\n"
+        "自动模式下：雨天自动收衣、高温自动开风扇/雾化、干燥自动开雾化。\n"
         "Args:\n"
         "  enable: true=开启自动模式/false=关闭",
         PropertyList({

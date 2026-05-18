@@ -1,5 +1,6 @@
 #include "mqtt_receive.h"
 #include "iot_control_task.h"
+#include "sensor_adc_task.h"
 #include "mqtt_iot_protocol.h"
 
 #include "esp_log.h"
@@ -7,39 +8,86 @@
 #include "esp_wifi.h"
 #include "esp_mac.h"
 #include "esp_netif.h"
+#include "esp_err.h"
+#include <string.h>
+#include <stdlib.h>
+#include <errno.h>
 
 static const char* TAG = "MQTT_RECV";
 
 static esp_mqtt_client_handle_t s_mqtt_client = NULL;
+static bool s_mqtt_connected = false;
 static char s_mac_str[13] = {0};
 
 static emergency_event_cb_t s_emergency_cb = NULL;
 
 #define DEVICE_NAME "智慧庭院"
-#define TOTAL_GPIO_COUNT 10
+#define TOTAL_GPIO_COUNT 8
 
 #define MQTT_BROKER_URI     "mqtt://8.134.167.240"
 #define MQTT_BROKER_PORT    1883
+#define SERVO_GPIO_INDEX_BASE (LIGHT_COUNT + RELAY_COUNT)
 
-static void Send_Response(uint8_t cmd, uint8_t gpio_index, uint8_t value) {
-    if (s_mqtt_client == NULL) return;
+static bool MQTT_Can_Publish(const char* reason) {
+    if (s_mqtt_client == NULL || !s_mqtt_connected) {
+        ESP_LOGW(TAG, "MQTT not connected, skip %s", reason ? reason : "publish");
+        return false;
+    }
+    return true;
+}
+
+static bool Get_Device_Value_By_Global_Index(uint8_t gpio_index, uint8_t* value) {
+    if (value == NULL) {
+        return false;
+    }
+
+    if (!Iot_Device_Flags_Lock(__func__)) {
+        return false;
+    }
+    if (gpio_index < LIGHT_COUNT) {
+        *value = (uint8_t)g_device_flags.light[gpio_index];
+        Iot_Device_Flags_Unlock(__func__);
+        return true;
+    }
+
+    if (gpio_index < LIGHT_COUNT + RELAY_COUNT) {
+        uint8_t relay_idx = gpio_index - LIGHT_COUNT;
+        *value = (uint8_t)g_device_flags.relay[relay_idx];
+        Iot_Device_Flags_Unlock(__func__);
+        return true;
+    }
+
+    if (gpio_index >= SERVO_GPIO_INDEX_BASE &&
+        gpio_index < SERVO_GPIO_INDEX_BASE + SERVO_COUNT) {
+        uint8_t servo_idx = gpio_index - SERVO_GPIO_INDEX_BASE;
+        *value = (uint8_t)g_device_flags.servo[servo_idx];
+        Iot_Device_Flags_Unlock(__func__);
+        return true;
+    }
+
+    Iot_Device_Flags_Unlock(__func__);
+    return false;
+}
+
+static void Send_Response(uint8_t original_cmd, uint8_t gpio_index, uint8_t value) {
+    if (!MQTT_Can_Publish("response")) return;
 
     iot_command_packet_t resp = {
-        .command = cmd,
-        .device_id = 0,
+        .command = IOT_CMD_RESPONSE,
+        .device_id = 10,
         .gpio_index = gpio_index,
         .value = value,
-        .reserved = {0}
+        .reserved = {original_cmd, 0, 0, 0}
     };
 
     char topic[64];
     snprintf(topic, sizeof(topic), MQTT_TOPIC_RESP_PREFIX "%s", s_mac_str);
     esp_mqtt_client_publish(s_mqtt_client, topic, (const char*)&resp, sizeof(resp), 0, 0);
-    ESP_LOGD(TAG, "Response sent: cmd=%d, gpio=%d, value=%d", cmd, gpio_index, value);
+    ESP_LOGD(TAG, "Response sent: original=%d, gpio=%d, value=%d", original_cmd, gpio_index, value);
 }
 
 static void Send_Announce(void) {
-    if (s_mqtt_client == NULL) return;
+    if (!MQTT_Can_Publish("announce")) return;
 
     iot_announce_v2_packet_t resp = {
         .command = IOT_CMD_ANNOUNCE_V2,
@@ -56,46 +104,55 @@ static void Send_Announce(void) {
 }
 
 static void Process_Command(const iot_command_packet_t* cmd) {
-    ESP_LOGI(TAG, "Command: cmd=%d, gpio=%d, value=%d",
+    ESP_LOGD(TAG, "Command: cmd=%d, gpio=%d, value=%d",
             cmd->command, cmd->gpio_index, cmd->value);
 
     switch (cmd->command) {
     case IOT_CMD_SET_GPIO:
         DEVICE_FLAGS_LOCK();
         if (cmd->gpio_index < LIGHT_COUNT) {
-            g_device_flags.light[cmd->gpio_index] = (cmd->value == 1) ? ON : OFF;
+            g_device_flags.light[cmd->gpio_index] = (cmd->value == 1) ? SWITCH_ON : SWITCH_OFF;
             ESP_LOGI(TAG, "Light[%d] = %s", cmd->gpio_index, cmd->value ? "ON" : "OFF");
         } else if (cmd->gpio_index < LIGHT_COUNT + RELAY_COUNT) {
-            g_device_flags.relay[cmd->gpio_index - LIGHT_COUNT] = (cmd->value == 1) ? ON : OFF;
-            ESP_LOGI(TAG, "Relay[%d] = %s", cmd->gpio_index - LIGHT_COUNT, cmd->value ? "ON" : "OFF");
+            uint8_t relay_idx = cmd->gpio_index - LIGHT_COUNT;
+            g_device_flags.relay[relay_idx] = (cmd->value == 1) ? SWITCH_ON : SWITCH_OFF;
+            Sensor_ADC_Notify_Relay_Manual(relay_idx);
+            ESP_LOGI(TAG, "Relay[%d] = %s", relay_idx, cmd->value ? "ON" : "OFF");
+        } else if (cmd->gpio_index >= SERVO_GPIO_INDEX_BASE &&
+                   cmd->gpio_index < SERVO_GPIO_INDEX_BASE + SERVO_COUNT) {
+            uint8_t servo_idx = cmd->gpio_index - SERVO_GPIO_INDEX_BASE;
+            g_device_flags.servo[servo_idx] = cmd->value ? SERVO_MAX_ANGLE : SERVO_MIN_ANGLE;
+            ESP_LOGI(TAG, "Servo[%d] = %d deg", servo_idx, g_device_flags.servo[servo_idx]);
         }
         DEVICE_FLAGS_UNLOCK();
-        Send_Response(IOT_CMD_RESPONSE, cmd->gpio_index, cmd->value);
+        Send_Response(IOT_CMD_SET_GPIO, cmd->gpio_index, cmd->value);
         break;
 
     case IOT_CMD_SET_LIGHT:
         DEVICE_FLAGS_LOCK();
         if (cmd->gpio_index < LIGHT_COUNT) {
-            g_device_flags.light[cmd->gpio_index] = (cmd->value == 1) ? ON : OFF;
+            g_device_flags.light[cmd->gpio_index] = (cmd->value == 1) ? SWITCH_ON : SWITCH_OFF;
             ESP_LOGI(TAG, "Light[%d] = %s", cmd->gpio_index, cmd->value ? "ON" : "OFF");
         }
         DEVICE_FLAGS_UNLOCK();
-        Send_Response(IOT_CMD_RESPONSE, cmd->gpio_index, cmd->value);
+        Send_Response(IOT_CMD_SET_LIGHT, cmd->gpio_index, cmd->value);
         break;
 
     case IOT_CMD_SET_RELAY:
         DEVICE_FLAGS_LOCK();
         if (cmd->gpio_index < RELAY_COUNT) {
-            g_device_flags.relay[cmd->gpio_index] = (cmd->value == 1) ? ON : OFF;
+            g_device_flags.relay[cmd->gpio_index] = (cmd->value == 1) ? SWITCH_ON : SWITCH_OFF;
+            Sensor_ADC_Notify_Relay_Manual(cmd->gpio_index);
             ESP_LOGI(TAG, "Relay[%d] = %s", cmd->gpio_index, cmd->value ? "ON" : "OFF");
         }
         DEVICE_FLAGS_UNLOCK();
-        Send_Response(IOT_CMD_RESPONSE, cmd->gpio_index, cmd->value);
+        Send_Response(IOT_CMD_SET_RELAY, LIGHT_COUNT + cmd->gpio_index, cmd->value);
         break;
 
     case IOT_CMD_SET_SERVO:
-        if (cmd->gpio_index >= 6 && cmd->gpio_index < 6 + SERVO_COUNT) {
-            uint8_t local_idx = cmd->gpio_index - 6;
+        if (cmd->gpio_index >= SERVO_GPIO_INDEX_BASE &&
+            cmd->gpio_index < SERVO_GPIO_INDEX_BASE + SERVO_COUNT) {
+            uint8_t local_idx = cmd->gpio_index - SERVO_GPIO_INDEX_BASE;
             int16_t angle = (int16_t)cmd->value;
             if (cmd->reserved[0] != 0) {
                 angle = (int16_t)((cmd->reserved[0] << 8) | cmd->value);
@@ -106,7 +163,7 @@ static void Process_Command(const iot_command_packet_t* cmd) {
             g_device_flags.servo[local_idx] = angle;
             DEVICE_FLAGS_UNLOCK();
             ESP_LOGI(TAG, "Servo[%d] = %d deg", local_idx, (int)angle);
-            Send_Response(IOT_CMD_RESPONSE, cmd->gpio_index, (uint8_t)angle);
+            Send_Response(IOT_CMD_SET_SERVO, cmd->gpio_index, (uint8_t)angle);
         }
         break;
 
@@ -115,7 +172,7 @@ static void Process_Command(const iot_command_packet_t* cmd) {
         g_device_flags.auto_mode = (cmd->value == 1);
         DEVICE_FLAGS_UNLOCK();
         ESP_LOGI(TAG, "Auto mode = %s", cmd->value ? "ON" : "OFF");
-        Send_Response(IOT_CMD_RESPONSE, 0, cmd->value);
+        Send_Response(IOT_CMD_SET_AUTO_MODE, 0, cmd->value);
         break;
 
     case IOT_CMD_FIRE_RESET:
@@ -123,18 +180,37 @@ static void Process_Command(const iot_command_packet_t* cmd) {
         g_device_flags.fire_status = FIRE_NORMAL;
         DEVICE_FLAGS_UNLOCK();
         ESP_LOGI(TAG, "Fire status reset to NORMAL");
-        Send_Response(IOT_CMD_RESPONSE, 0, 0);
+        Send_Response(IOT_CMD_FIRE_RESET, 0, 0);
+        break;
+
+    case IOT_CMD_GET_GPIO: {
+        uint8_t value = 0;
+        if (Get_Device_Value_By_Global_Index(cmd->gpio_index, &value)) {
+            Send_Response(IOT_CMD_GET_GPIO, cmd->gpio_index, value);
+        } else {
+            ESP_LOGW(TAG, "GET_GPIO invalid index: %d", cmd->gpio_index);
+        }
+        break;
+    }
+
+    case IOT_CMD_GET_ALL_GPIO:
+        for (uint8_t i = 0; i < TOTAL_GPIO_COUNT; i++) {
+            uint8_t value = 0;
+            if (Get_Device_Value_By_Global_Index(i, &value)) {
+                Send_Response(IOT_CMD_GET_ALL_GPIO, i, value);
+            }
+        }
         break;
 
     case IOT_CMD_DISCOVER:
-        ESP_LOGI(TAG, "Master discovered via MQTT");
+        ESP_LOGD(TAG, "Master discovered via MQTT");
         Send_Announce();
         break;
 
     case IOT_CMD_BROADCAST_ALL_OFF:
         DEVICE_FLAGS_LOCK();
-        for (int i = 0; i < LIGHT_COUNT; i++) g_device_flags.light[i] = OFF;
-        for (int i = 0; i < RELAY_COUNT; i++) g_device_flags.relay[i] = OFF;
+        for (int i = 0; i < LIGHT_COUNT; i++) g_device_flags.light[i] = SWITCH_OFF;
+        for (int i = 0; i < RELAY_COUNT; i++) g_device_flags.relay[i] = SWITCH_OFF;
         for (int i = 0; i < SERVO_COUNT; i++) g_device_flags.servo[i] = SERVO_MIN_ANGLE;
         DEVICE_FLAGS_UNLOCK();
         ESP_LOGI(TAG, "All devices OFF");
@@ -142,22 +218,22 @@ static void Process_Command(const iot_command_packet_t* cmd) {
 
     case IOT_CMD_BROADCAST_ALL_ON:
         DEVICE_FLAGS_LOCK();
-        for (int i = 0; i < LIGHT_COUNT; i++) g_device_flags.light[i] = ON;
-        for (int i = 0; i < RELAY_COUNT; i++) g_device_flags.relay[i] = ON;
+        for (int i = 0; i < LIGHT_COUNT; i++) g_device_flags.light[i] = SWITCH_ON;
+        for (int i = 0; i < RELAY_COUNT; i++) g_device_flags.relay[i] = SWITCH_ON;
         DEVICE_FLAGS_UNLOCK();
         ESP_LOGI(TAG, "All lights and relays ON");
         break;
 
     case IOT_CMD_BROADCAST_LIGHTS_OFF:
         DEVICE_FLAGS_LOCK();
-        for (int i = 0; i < LIGHT_COUNT; i++) g_device_flags.light[i] = OFF;
+        for (int i = 0; i < LIGHT_COUNT; i++) g_device_flags.light[i] = SWITCH_OFF;
         DEVICE_FLAGS_UNLOCK();
         ESP_LOGI(TAG, "All lights OFF");
         break;
 
     case IOT_CMD_BROADCAST_LIGHTS_ON:
         DEVICE_FLAGS_LOCK();
-        for (int i = 0; i < LIGHT_COUNT; i++) g_device_flags.light[i] = ON;
+        for (int i = 0; i < LIGHT_COUNT; i++) g_device_flags.light[i] = SWITCH_ON;
         DEVICE_FLAGS_UNLOCK();
         ESP_LOGI(TAG, "All lights ON");
         break;
@@ -182,14 +258,18 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
 
     switch (event->event_id) {
         case MQTT_EVENT_CONNECTED:
-            ESP_LOGI(TAG, "MQTT connected");
+            s_mqtt_connected = true;
+            ESP_LOGI(TAG, "MQTT connected: broker=%s:%d, client=%s",
+                     MQTT_BROKER_URI, MQTT_BROKER_PORT, s_mac_str);
             esp_mqtt_client_subscribe(s_mqtt_client, MQTT_TOPIC_CMD_BROADCAST, 1);
             esp_mqtt_client_subscribe(s_mqtt_client, MQTT_TOPIC_CMD_PREFIX DEVICE_ID_GARDEN, 1);
             Send_Announce();
             break;
 
         case MQTT_EVENT_DISCONNECTED:
-            ESP_LOGW(TAG, "MQTT disconnected");
+            s_mqtt_connected = false;
+            ESP_LOGW(TAG, "MQTT disconnected, auto reconnect is enabled (%d ms)",
+                     5000);
             break;
 
         case MQTT_EVENT_DATA:
@@ -203,8 +283,9 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
                 bool is_cmd_topic = (strstr(topic_buf, MQTT_TOPIC_CMD_PREFIX) != NULL ||
                                      strstr(topic_buf, MQTT_TOPIC_CMD_BROADCAST) != NULL);
                 if (is_cmd_topic) {
-                    const iot_command_packet_t* cmd = (const iot_command_packet_t*)event->data;
-                    Process_Command(cmd);
+                    iot_command_packet_t cmd_buf;
+                    memcpy(&cmd_buf, event->data, sizeof(cmd_buf));
+                    Process_Command(&cmd_buf);
                 }
             } else if (event->data_len > 0 && event->data_len < (int)sizeof(iot_command_packet_t)) {
                 ESP_LOGD(TAG, "Short packet on non-cmd topic: %d bytes", event->data_len);
@@ -212,7 +293,19 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
             break;
 
         case MQTT_EVENT_ERROR:
-            ESP_LOGE(TAG, "MQTT error");
+            s_mqtt_connected = false;
+            if (event->error_handle) {
+                ESP_LOGE(TAG,
+                         "MQTT error: type=%d, esp_tls=%s, tls_stack=0x%x, sock_errno=%d (%s), reconnect=%s",
+                         event->error_handle->error_type,
+                         esp_err_to_name(event->error_handle->esp_tls_last_esp_err),
+                         event->error_handle->esp_tls_stack_err,
+                         event->error_handle->esp_transport_sock_errno,
+                         strerror(event->error_handle->esp_transport_sock_errno),
+                         "enabled");
+            } else {
+                ESP_LOGE(TAG, "MQTT error: no error handle, reconnect=enabled");
+            }
             break;
 
         default:
@@ -224,29 +317,62 @@ void MQTT_Receive_Init(void) {
     ESP_LOGI(TAG, "Initializing MQTT...");
 
     uint8_t mac[6];
-    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    esp_err_t err = esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to read MAC: %d", err);
+        return;
+    }
     mac_to_string(mac, s_mac_str, sizeof(s_mac_str));
+    ESP_LOGI(TAG, "MAC: %s", s_mac_str);
 
-    char client_id[24] = {0};
+    char client_id[32] = {0};
     snprintf(client_id, sizeof(client_id), "xiaozhi_slave_%s", s_mac_str);
+    ESP_LOGI(TAG, "Client ID: %s", client_id);
 
-    esp_mqtt_client_config_t mqtt_cfg = {
-        .broker.address.uri = MQTT_BROKER_URI,
-        .broker.address.port = MQTT_BROKER_PORT,
-        .credentials.client_id = client_id,
-        .session.keepalive = 30,
-        .network.disable_auto_reconnect = false,
-        .network.reconnect_timeout_ms = 5000,
-    };
+    size_t free_heap = esp_get_free_heap_size();
+    ESP_LOGI(TAG, "Free heap: %d bytes", (int)free_heap);
+    if (free_heap < 8192) {
+        ESP_LOGE(TAG, "Insufficient heap memory!");
+        return;
+    }
 
-    s_mqtt_client = esp_mqtt_client_init(&mqtt_cfg);
+    esp_mqtt_client_config_t* mqtt_cfg = calloc(1, sizeof(esp_mqtt_client_config_t));
+    if (mqtt_cfg == NULL) {
+        ESP_LOGE(TAG, "Failed to allocate MQTT config");
+        return;
+    }
+
+    mqtt_cfg->broker.address.uri = MQTT_BROKER_URI;
+    mqtt_cfg->broker.address.port = MQTT_BROKER_PORT;
+    mqtt_cfg->credentials.client_id = client_id;
+    mqtt_cfg->session.keepalive = 30;
+    mqtt_cfg->network.disable_auto_reconnect = false;
+    mqtt_cfg->network.reconnect_timeout_ms = 5000;
+
+    ESP_LOGI(TAG, "MQTT config ready");
+
+    s_mqtt_client = esp_mqtt_client_init(mqtt_cfg);
+    free(mqtt_cfg);
+
     if (s_mqtt_client == NULL) {
         ESP_LOGE(TAG, "Failed to init MQTT client");
         return;
     }
+    ESP_LOGI(TAG, "MQTT client init OK");
 
-    esp_mqtt_client_register_event(s_mqtt_client, ESP_EVENT_ANY_ID, mqtt_event_handler, NULL);
-    esp_mqtt_client_start(s_mqtt_client);
+    err = esp_mqtt_client_register_event(s_mqtt_client, ESP_EVENT_ANY_ID, mqtt_event_handler, NULL);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to register event: %d", err);
+        return;
+    }
+    ESP_LOGI(TAG, "MQTT event registered");
+
+    err = esp_mqtt_client_start(s_mqtt_client);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to start MQTT: %d", err);
+        return;
+    }
+    ESP_LOGI(TAG, "MQTT started");
 
     ESP_LOGI(TAG, "MQTT initialized (client_id: %s, device: %s)", client_id, DEVICE_NAME);
 }
@@ -256,8 +382,7 @@ void MQTT_Register_Emergency_Callback(emergency_event_cb_t cb) {
 }
 
 void MQTT_Publish_Emergency(emergency_type_t type, const char* detail) {
-    if (s_mqtt_client == NULL) {
-        ESP_LOGW(TAG, "MQTT client not ready, cannot publish emergency");
+    if (!MQTT_Can_Publish("emergency")) {
         return;
     }
 
@@ -284,4 +409,8 @@ esp_mqtt_client_handle_t MQTT_Get_Client(void) {
 
 const char* MQTT_Get_MAC_Str(void) {
     return s_mac_str;
+}
+
+bool MQTT_Is_Connected(void) {
+    return s_mqtt_connected;
 }

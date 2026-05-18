@@ -30,8 +30,8 @@ static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_
     } 
     else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         wifi_event_sta_disconnected_t* event = (wifi_event_sta_disconnected_t*) event_data;
-        ESP_LOGE(TAG, "WiFi断开连接，原因代码: %d", event->reason);
-        ESP_LOGE(TAG, "SSID: %s", (char*)event->ssid);
+        ESP_LOGW(TAG, "WiFi断开连接，原因代码: %d", event->reason);
+        ESP_LOGW(TAG, "SSID: %s", (char*)event->ssid);
         
         if (s_retry_num < s_max_retry) {
             esp_wifi_connect();

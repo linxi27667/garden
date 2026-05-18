@@ -43,6 +43,14 @@ static void Load_Alarms_From_NVS(void) {
     }
     
     size_t required_size = sizeof(g_alarm_manager.alarms);
+    size_t actual_size = 0;
+    err = nvs_get_blob(nvs_handle, "alarms", NULL, &actual_size);
+    if (err == ESP_OK && actual_size != required_size) {
+        ESP_LOGW(TAG, "NVS blob size mismatch (expected=%u, actual=%u), resetting to defaults",
+                 (unsigned)required_size, (unsigned)actual_size);
+        nvs_close(nvs_handle);
+        return;
+    }
     err = nvs_get_blob(nvs_handle, "alarms", g_alarm_manager.alarms, &required_size);
     if (err == ESP_OK) {
         int32_t count = 0;
@@ -118,9 +126,7 @@ static int Add_Alarm_Internal(alarm_type_t type, int64_t trigger_time,
     
     alarm->repeat_daily = repeat_daily;
     alarm->enabled = true;
-    alarm->snooze_count = 0;
-    alarm->snooze_minutes = 5;
-    
+
     g_alarm_manager.alarm_count++;
     
     Save_Alarms_To_NVS();
@@ -226,28 +232,6 @@ bool Alarm_Mcp_Dismiss(int alarm_id) {
     }
     
     Save_Alarms_To_NVS();
-    return true;
-}
-
-bool Alarm_Mcp_Snooze(int alarm_id, int minutes) {
-    alarm_info_t* alarm = Alarm_Mcp_Get_By_Id(alarm_id);
-    if (alarm == NULL) {
-        return false;
-    }
-    
-    if (minutes <= 0) {
-        minutes = alarm->snooze_minutes;
-    }
-    
-    alarm->state = ALARM_STATE_SNOOZED;
-    alarm->trigger_time += minutes * 60;
-    alarm->snooze_count++;
-    alarm->enabled = true;
-    
-    Save_Alarms_To_NVS();
-    ESP_LOGI(TAG, "Alarm %d snoozed for %d minutes (count=%d)", 
-             alarm_id, minutes, alarm->snooze_count);
-    
     return true;
 }
 
@@ -377,7 +361,6 @@ void Alarm_Mcp_Get_Status_Json(char* buffer, int buffer_size) {
         cJSON_AddStringToObject(alarm_json, "medicine_name", alarm->medicine_name);
         cJSON_AddBoolToObject(alarm_json, "repeat_daily", alarm->repeat_daily);
         cJSON_AddBoolToObject(alarm_json, "enabled", alarm->enabled);
-        cJSON_AddNumberToObject(alarm_json, "snooze_count", alarm->snooze_count);
 
         cJSON_AddItemToArray(alarms_array, alarm_json);
     }

@@ -23,6 +23,7 @@ typedef void (*emergency_event_cb_t)(emergency_type_t type, const char* detail);
 void MQTT_Receive_Init(void);
 esp_mqtt_client_handle_t MQTT_Get_Client(void);
 const char* MQTT_Get_MAC_Str(void);
+bool MQTT_Is_Connected(void);
 
 /**
  * 注册紧急事件回调

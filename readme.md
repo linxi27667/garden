@@ -101,25 +101,86 @@ web/
 
 主机只保留自身音频、显示、蜂鸣器和姿态传感器，不接庭院负载。
 
-### 庭院从机
+### 庭院从机 (ESP32-S3 专属引脚分配)
 
-| 设备 | 逻辑名 | 引脚 | 类型 |
-| --- | --- | --- | --- |
-| 西庭灯 | `courtyard_west_light` / `corridor_light` 兼容 | GPIO2 | 输出 |
-| 庭院灯带 | `strip_light` | GPIO4 | 输出 |
-| 长廊灯 | `corridor_long_light` / `veg_light` 兼容 | GPIO5 | 输出 |
-| 风扇 | `fan` | GPIO6 | 继电器 CH0 |
-| 水泵 | `water_pump` | GPIO7 | 继电器 CH1 |
-| 雾化器 | `atomizer` | GPIO15 | 继电器 CH2 |
-| 安防总闸 | `safety_switch` | GPIO16 | 继电器 CH3，建议接 NC 常闭 |
-| 晾衣架 | `servo` | GPIO18 | LEDC PWM |
-| 土壤湿度 | `soil_mv` | ADC1_CH0 | 模拟输入 |
-| 光照/雨滴判定 | `light_mv` | ADC1_CH2 | 模拟输入 |
-| DHT11 | `temperature` / `humidity` | GPIO8 | 单总线 |
-| 火焰传感器 | `fire_status` | GPIO10 | 下降沿中断 |
-| 求助按钮 | `help_status` | GPIO11 | 下降沿中断 |
+> **重要**：以下接线表基于 ESP32-S3 芯片的 GPIO 与 ADC 通道映射设计。ESP32-S3 的 ADC1 通道固定映射到 GPIO1~GPIO10（与经典 ESP32 完全不同），所有引脚均避开 Strapping 引脚（GPIO0/3/45/46）、USB-JTAG（GPIO19/20）和 SPI Flash/PSRAM 占用区（GPIO26~37）。
 
-硬件安全提示：如果从机使用经典 ESP32-WROOM，GPIO6-GPIO11 通常连接 SPI Flash，不能作为普通 GPIO。当前接线表适合已验证的开发板映射；若换成 ESP32-WROOM，请先把 GPIO6、GPIO7、GPIO8、GPIO10、GPIO11 迁移到安全 GPIO，再烧录运行。
+| 设备 | 逻辑名 | 引脚 | ADC通道 | 类型 | 说明 |
+| --- | --- | --- | --- | --- | --- |
+| 土壤湿度 | `soil_mv` | **GPIO1** | ADC1_CH0 | 模拟输入 | 土壤湿度传感器 AO 输出 |
+| 雨滴检测 | `rain_adc_mv` | **GPIO4** | ADC1_CH3 | 模拟输入 | 雨滴传感器 AO 输出，**物理隔离** |
+| 西庭灯 | `courtyard_west_light` | **GPIO11** | — | 数字输出 | 灯光控制 |
+| 庭院灯带 | `strip_light` | **GPIO12** | — | 数字输出 | 灯光控制 |
+| 长廊灯 | `corridor_long_light` | **GPIO13** | — | 数字输出 | 灯光控制 |
+| 风扇 | `fan` | **GPIO14** | — | 继电器 CH0 | 风扇控制 |
+| 水泵 | `water_pump` | **GPIO15** | — | 继电器 CH1 | 水泵控制 |
+| 雾化器 | `atomizer` | **GPIO16** | — | 继电器 CH2 | 雾化器控制 |
+| 安防总闸 | `safety_switch` | **GPIO17** | — | 继电器 CH3 | 建议接 NC 常闭 |
+| 晾衣架 | `servo` | **GPIO18** | — | LEDC PWM | 50Hz 舵机信号 |
+| DHT11 | `temperature` / `humidity` | **GPIO38** | — | 单总线 | 温湿度采集 |
+| 火焰传感器 | `fire_status` | **GPIO2** | — | ⚠️ 下降沿中断，复用原光照引脚 |
+| 求助按钮 | `help_status` | **GPIO48** | — | 下降沿中断 | 一键求助 |
+| ASR语音模块 | — | **GPIO43** | — | UART1 TX | 单向发送告警指令 |
+
+#### 土壤湿度传感器接线详解
+
+土壤湿度传感器通常有 4 个引脚（以 YL-69/FC-28 为例）：
+
+```
+土壤湿度传感器 (YL-69 / FC-28)
+┌────────────────────────┐
+│ VCC  ──── 3.3V (ESP32-S3)       │
+│ GND  ──── GND (ESP32-S3)        │
+│ AO   ──── GPIO1 (ADC1_CH0)      │  ← 模拟输出，接ESP32-S3的ADC引脚
+│ DO   ──── [可选] 数字阈值输出    │
+└────────────────────────┘
+```
+
+**工作原理**：
+- 传感器探头插入土壤，通过测量两电极间的电阻来判断含水量
+- AO 引脚输出 0~3.1V 模拟电压（对应 `ADC_ATTEN_DB_12` 衰减档位）
+- 土壤越湿，电阻越小，输出电压越高
+- ESP32-S3 的 `adc1_get_raw(ADC1_CH0)` 读取 GPIO1 的 ADC 原始值（0~4095）
+- 原始值转换为电压：`mV = raw * 3100 / 4095`
+- 电压转换为百分比：`percent = mV * 100 / 3100`
+
+> **注意**：ADC1_CH0 在 ESP32-S3 上固定映射到 **GPIO1**（不是经典 ESP32 的 GPIO36！）。这是 ESP32-S3 与经典 ESP32 的关键区别。
+
+#### ADC 通道详细分配 (ESP32-S3)
+
+```
+ESP32-S3 ADC1 通道映射
+═══════════════════════════════════════════════════════════
+ADC1_CH0 (GPIO1)  ─── 土壤湿度传感器 ─── soil_mv (0-3100mV)
+ADC1_CH1 (GPIO2)  ─── [火焰传感器] 原光照引脚，现为火灾检测(下降沿中断)
+ADC1_CH2 (GPIO3)  ─── [跳过—Strapping引脚]
+ADC1_CH3 (GPIO4)  ─── 雨滴传感器 ────── rain_adc_mv (0-3100mV)
+                        ↓
+                 阈值判断: rain_adc_mv <= 2000mV 判定为雨天
+
+ADC1_CH4~CH9 (GPIO5~GPIO10) ─── [预留，未使用]
+═══════════════════════════════════════════════════════════
+```
+
+> **传感器隔离说明**：雨滴传感器使用独立 ADC 通道 (GPIO4/CH3)，与土壤传感器 (GPIO1/CH0) 物理隔离。光照传感器已移除，GPIO2 现用于火焰传感器（数字输入中断）。
+
+#### ESP32-S3 GPIO 资源分析
+
+| 资源 | 总数 | 已用 | 剩余 | 备注 |
+|------|------|------|------|------|
+| 普通 GPIO | 45个 | 14个 | **31个** | 非常充裕 |
+| ADC1 通道 | 10个(GPIO1-10) | 2个 | 8个 | 充足 |
+| ADC2 通道 | 10个(GPIO11-20) | 0个 | 10个 | Wi-Fi 占用，不可用 |
+| LEDC PWM | 8路 | 1路 | 7路 | 充足 |
+| 外部中断 | 任意 GPIO | 2个 | 充足 | GPIO2(火焰) + GPIO48(求助) |
+| Strapping 冲突 | — | 0个 | — | ✅ 全部避开 |
+
+**引脚分配原则**：
+- 模拟输入（2路 ADC）：GPIO1(CH0土壤)、GPIO4(CH3雨滴)
+- 数字输出（8路）：集中到 GPIO11~GPIO18（连续块，接线方便）
+- 数字输入/传感器：GPIO2(火焰中断)、GPIO38(DHT11)、GPIO48(求助中断)
+- UART：GPIO43（安全 GPIO，UART0 默认 TX 脚）
+- 完全避开 Strapping 引脚及 USB/JTAG 冲突区
 
 ## 设备命名规范
 
@@ -234,7 +295,7 @@ Topic：`xiaozhi/iot/sensor/{mac}`
 ```json
 {
   "soil_mv": 1450,
-  "light_mv": 2800,
+  "rain_mv": 1850,
   "fire_status": 0,
   "rain_status": 0,
   "help_status": 0,

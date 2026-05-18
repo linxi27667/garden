@@ -4,17 +4,37 @@
  */
 #include "app_asr_uart.h"
 #include "esp_log.h"
+#include "sdkconfig.h"
 #include "driver/uart.h"
 #include "driver/gpio.h"
 
 static const char* TAG = "APP_ASR_UART";
 
 #define ASR_UART_NUM       UART_NUM_1
-#define ASR_UART_TX_PIN    GPIO_NUM_17
+#define ASR_UART_TX_PIN    GPIO_NUM_21
 #define ASR_UART_BAUD      115200
 #define ASR_UART_BUF_SIZE  256
 
+static bool ASR_Tx_Pin_Is_Console_Pin(gpio_num_t pin) {
+#if CONFIG_IDF_TARGET_ESP32S3 && CONFIG_ESP_CONSOLE_UART
+    return (pin == GPIO_NUM_43 || pin == GPIO_NUM_44);
+#else
+    (void)pin;
+    return false;
+#endif
+}
+
 static bool HW_ASR_UART_Init(asr_uart_t *dev) {
+    if (dev == NULL) {
+        return false;
+    }
+
+    gpio_num_t tx_pin = (gpio_num_t)dev->tx_pin;
+    if (ASR_Tx_Pin_Is_Console_Pin(tx_pin)) {
+        ESP_LOGE(TAG, "ASR TX GPIO%d conflicts with ESP32-S3 console UART0; ASR disabled to keep logs alive", tx_pin);
+        return false;
+    }
+
     uart_config_t uart_cfg = {
         .baud_rate = dev->baud_rate,
         .data_bits = UART_DATA_8_BITS,
@@ -29,7 +49,7 @@ static bool HW_ASR_UART_Init(asr_uart_t *dev) {
         return false;
     }
 
-    if (uart_set_pin(ASR_UART_NUM, ASR_UART_TX_PIN, UART_PIN_NO_CHANGE,
+    if (uart_set_pin(ASR_UART_NUM, tx_pin, UART_PIN_NO_CHANGE,
                      UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE) != ESP_OK) {
         ESP_LOGE(TAG, "UART pin set failed");
         return false;
@@ -41,7 +61,7 @@ static bool HW_ASR_UART_Init(asr_uart_t *dev) {
     }
 
     ESP_LOGI(TAG, "ASR UART initialized: TX=%d, Baud=%d",
-             ASR_UART_TX_PIN, ASR_UART_BAUD);
+             tx_pin, (int)dev->baud_rate);
     return true;
 }
 
@@ -80,9 +100,3 @@ void App_ASR_Send_Help_Alert(void) {
     }
 }
 
-void App_ASR_Send_Emergency_Alert(void) {
-    if (g_asr_uart_dev.is_init) {
-        BSP_ASR_Send_Command(&g_asr_uart_dev, ASR_CMD_EMERGENCY);
-        ESP_LOGW(TAG, "[ASR] Emergency alert triggered: 0x%02X", ASR_CMD_EMERGENCY);
-    }
-}

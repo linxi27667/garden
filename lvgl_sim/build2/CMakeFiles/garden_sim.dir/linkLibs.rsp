@@ -1,1 +1,0 @@
- lvgl/lib/liblvgl.a lvgl/lib/liblvgl_thorvg.a -LE:/MCU/lvgl_tools/SDL2-2.30.8/x86_64-w64-mingw32/lib -lSDL2 -lstdc++ lvgl/lib/liblvgl.a -lkernel32 -luser32 -lgdi32 -lwinspool -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32 

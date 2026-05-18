@@ -5,9 +5,9 @@
 #include <stdbool.h>
 
 typedef enum {
-    GARDEN_LIGHT_OFF = 0,
-    GARDEN_LIGHT_ON = 1
-} garden_light_state_t;
+    GARDEN_SWITCH_OFF = 0,
+    GARDEN_SWITCH_ON = 1
+} garden_switch_state_t;
 
 typedef enum {
     GARDEN_SERVO_COLLECT = 0,
@@ -26,8 +26,8 @@ typedef enum {
 } garden_fire_state_t;
 
 typedef struct {
-    uint8_t soil_value;
-    uint8_t light_value;
+    uint8_t soil_percent;
+    uint16_t rain_adc_mv;
     garden_rain_state_t rain_state;
     garden_fire_state_t fire_status;
     uint8_t help_status;
@@ -37,15 +37,15 @@ typedef struct {
 } garden_sensor_data_t;
 
 typedef struct {
-    garden_light_state_t corridor_light;
-    garden_light_state_t strip_light;
-    garden_light_state_t veg_light;
+    garden_switch_state_t corridor_light;
+    garden_switch_state_t strip_light;
+    garden_switch_state_t veg_light;
     uint8_t veg_pwm_duty;
-    garden_light_state_t fan;
+    garden_switch_state_t fan;
     garden_servo_state_t servo;
-    garden_light_state_t water_pump;
-    garden_light_state_t atomizer;
-    garden_light_state_t safety_switch;
+    garden_switch_state_t water_pump;
+    garden_switch_state_t atomizer;
+    garden_switch_state_t safety_switch;
     bool auto_mode;
     garden_fire_state_t fire_status;
 } garden_device_state_t;

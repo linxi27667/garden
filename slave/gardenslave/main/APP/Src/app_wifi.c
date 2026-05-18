@@ -7,10 +7,8 @@
 #include "esp_log.h"
 #include "sdkconfig.h"
 #include <string.h>
-#include "esp_wifi.h"       // 必须包含：定义了 wifi_scan_config_t 和所有 esp_wifi_ 函数
-#include "esp_event.h"
-#include "nvs_flash.h"      // 必须有：解决 nvs_flash_init 报错
-#include "esp_netif.h"      // 必须有：解决 esp_netif_init 报错
+#include "esp_wifi.h"
+#include "esp_netif.h"
 
 static const char *TAG = "APP_WIFI";
 
@@ -20,10 +18,6 @@ static const char *TAG = "APP_WIFI";
 #define MAX_RETRY_TIMES  5
 
 void App_WiFi_System_Init(void) {
-    esp_log_level_set("wifi", ESP_LOG_INFO);
-    esp_log_level_set("esp_netif_handlers", ESP_LOG_INFO);
-    esp_log_level_set("BSP_WIFI", ESP_LOG_INFO);
-
     bsp_wifi_config_t my_wifi_cfg = {
         .max_retry = MAX_RETRY_TIMES,
         .ssid = {0},
@@ -45,7 +39,7 @@ ESP_LOGI(TAG, "网络子系统启动，正在连接热点: %s", ROUTER_SSID);
         esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF"); // 修正大小写错误
         if (netif) {
             esp_netif_get_ip_info(netif, &ip_info);
-            ESP_LOGI(TAG, "WiFi 连接成功! 请访问地址: http://" IPSTR "/stream", IP2STR(&ip_info.ip));
+            ESP_LOGI(TAG, "WiFi 连接成功! IP: " IPSTR, IP2STR(&ip_info.ip));
         } else {
             ESP_LOGI(TAG, "WiFi 连接成功 (IP获取未知)");
         }
@@ -59,35 +53,5 @@ ESP_LOGE(TAG, "网络连接失败，请检查密码或路由器状态。系统�
 }
 
 void App_Wifi_Scan(void) {
-    // 1. 必须先初始化 NVS（Wi-Fi 存储校准数据必用）
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        ret = nvs_flash_init();
-    }
-    ESP_ERROR_CHECK(ret);
-
-    // 2. 初始化底层网络堆栈
-    ESP_ERROR_CHECK(esp_netif_init());
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
-    esp_netif_create_default_wifi_sta();
-
-    // 3. 启动 Wi-Fi 驱动并设为 Station 模式
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    ESP_ERROR_CHECK(esp_wifi_start());
-
-    wifi_scan_config_t scan_config = { .ssid = 0, .bssid = 0, .channel = 0, .show_hidden = true };
-    ESP_ERROR_CHECK(esp_wifi_scan_start(&scan_config, true));
-    
-    uint16_t ap_count = 0;
-    esp_wifi_scan_get_ap_num(&ap_count);
-    wifi_ap_record_t *ap_list = (wifi_ap_record_t *)malloc(sizeof(wifi_ap_record_t) * ap_count);
-    ESP_ERROR_CHECK(esp_wifi_scan_get_ap_records(&ap_count, ap_list));
-    
-    for (int i = 0; i < ap_count; i++) {
-        printf("找到热点: SSID=%s, RSSI=%d \n", ap_list[i].ssid, ap_list[i].rssi);
-    }
-    free(ap_list);
+    ESP_LOGW(TAG, "App_Wifi_Scan() 已禁用 - 与已初始化的WiFi栈冲突");
 }

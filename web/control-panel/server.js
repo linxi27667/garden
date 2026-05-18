@@ -19,7 +19,7 @@ const IOT_CMD_SET_RELAY = 0x12;
 const IOT_CMD_SENSOR_REPORT = 0x13;
 const IOT_CMD_RESPONSE = 0x05;
 
-const SENSOR_MAP = { 0: 'soil_mv', 1: 'light_mv', 2: 'fire_status', 3: 'rain_status', 4: 'help_status' };
+const SENSOR_MAP = { 0: 'soil_mv', 1: 'rain_adc_mv', 2: 'fire_status', 3: 'rain_status', 4: 'help_status' };
 
 const MQTT_BROKER = process.env.MQTT_BROKER || process.argv[2] || 'mqtt://127.0.0.1';
 const MQTT_PORT = process.env.MQTT_PORT || 1883;

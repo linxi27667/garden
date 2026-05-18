@@ -31,11 +31,13 @@ typedef struct {
 } iot_gpio_config_t;
 
 typedef struct {
-    uint16_t smoke_mv;
-    uint16_t rain_mv;
+    uint16_t soil_mv;
+    uint16_t rain_adc_mv;
     uint8_t fire_status;     // 0=normal, 1=warning, 2=confirmed
     uint8_t rain_status;     // 0=dry, 1=raining
     uint8_t help_status;     // 0=inactive, 1=active
+    float temperature;
+    float humidity;
     uint32_t last_update_ms;
 } iot_sensor_state_t;
 
@@ -78,18 +80,18 @@ typedef struct iot_controller_dev {
 } iot_controller_t;
 
 void IOT_Controller_Init(iot_controller_t* dev);
-int IOT_Add_Local_GPIO(iot_controller_t* dev, void* port, uint16_t pin, const char* name, iot_gpio_mode_t mode, uint8_t default_level);
 int IOT_Add_Remote_Device(iot_controller_t* dev, const char* name, const uint8_t* mac, int gpio_count);
 void IOT_Set_Local_GPIO(iot_controller_t* dev, int index, uint8_t level);
 int IOT_Get_Local_GPIO(iot_controller_t* dev, int index);
 bool IOT_Set_Remote_GPIO(iot_controller_t* dev, int device_index, int gpio_index, uint8_t level);
 int IOT_Get_Remote_GPIO(iot_controller_t* dev, int device_index, int gpio_index);
 int IOT_Find_Device_By_Name(iot_controller_t* dev, const char* name);
+int IOT_Find_Device_By_Mac(iot_controller_t* dev, const uint8_t* mac);
 uint8_t IOT_Get_Device_Id_By_Name(const char* name);
 void IOT_Process_Remote_Response(iot_controller_t* dev, const uint8_t* mac, const uint8_t* data, int len);
 void IOT_Send_Heartbeat(iot_controller_t* dev);
 void IOT_Discover_Devices(iot_controller_t* dev);
-bool IOT_Set_Remote_Servo(iot_controller_t* dev, int device_index, int gpio_index, uint8_t angle);
+bool IOT_Set_Remote_Servo(iot_controller_t* dev, int device_index, int servo_index, uint8_t angle);
 void IOT_Update_Heartbeat(iot_controller_t* dev, const uint8_t* mac);
 void IOT_Check_Device_Timeout(iot_controller_t* dev, uint32_t timeout_ms);
 bool IOT_Set_Light(iot_controller_t* dev, int device_index, uint8_t light_index, uint8_t on);

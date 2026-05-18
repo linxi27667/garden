@@ -1,3 +1,0 @@
-C:\ST\STM32CubeCLT_1.20.0\CMake\bin\cmake.exe -E rm -f CMakeFiles\garden_sim.dir/objects.a
-C:\Users\30817\AppData\Local\Microsoft\WinGet\Packages\BrechtSanders.WinLibs.POSIX.UCRT_Microsoft.Winget.Source_8wekyb3d8bbwe\mingw64\bin\ar.exe qc CMakeFiles\garden_sim.dir/objects.a @CMakeFiles\garden_sim.dir\objects1.rsp
-C:\Users\30817\AppData\Local\Microsoft\WinGet\Packages\BrechtSanders.WinLibs.POSIX.UCRT_Microsoft.Winget.Source_8wekyb3d8bbwe\mingw64\bin\gcc.exe -g -mconsole -Wl,--whole-archive CMakeFiles\garden_sim.dir/objects.a -Wl,--no-whole-archive -o garden_sim.exe -Wl,--out-implib,libgarden_sim.dll.a -Wl,--major-image-version,0,--minor-image-version,0 @CMakeFiles\garden_sim.dir\linkLibs.rsp

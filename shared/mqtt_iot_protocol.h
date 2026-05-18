@@ -17,6 +17,7 @@
 
 /* ================= 命令码定义 (与原ESP-NOW一致) ================= */
 typedef enum {
+    /* ================= 基础命令 (0x01-0x08) ================= */
     IOT_CMD_SET_GPIO = 0x01,
     IOT_CMD_GET_GPIO = 0x02,
     IOT_CMD_GET_ALL_GPIO = 0x03,
@@ -25,10 +26,12 @@ typedef enum {
     IOT_CMD_DISCOVER = 0x06,
     IOT_CMD_ANNOUNCE = 0x07,
     IOT_CMD_ANNOUNCE_V2 = 0x08,
+    /* ================= 设备控制 (0x10-0x13) ================= */
     IOT_CMD_SET_SERVO = 0x10,
     IOT_CMD_SET_LIGHT = 0x11,
     IOT_CMD_SET_RELAY = 0x12,
     IOT_CMD_SENSOR_REPORT = 0x13,
+    /* ================= 广播与场景 (0x30-0x38) ================= */
     IOT_CMD_BROADCAST_ALL_OFF = 0x30,
     IOT_CMD_BROADCAST_ALL_ON = 0x31,
     IOT_CMD_BROADCAST_LIGHTS_OFF = 0x32,
@@ -67,11 +70,12 @@ typedef struct {
 
 /* ================= 传感器类型定义 ================= */
 typedef enum {
-    IOT_SENSOR_SMOKE_MV   = 0,
-    IOT_SENSOR_RAIN_MV    = 1,
-    IOT_SENSOR_FIRE_STATUS = 2,
-    IOT_SENSOR_RAIN_STATUS = 3,
-    IOT_SENSOR_HELP_STATUS = 4
+    IOT_SENSOR_SOIL_MV    = 0,  // 土壤湿度(mV)
+    IOT_SENSOR_RESERVED_1 = 1,  // [已移除] 原光照传感器，已删除
+    IOT_SENSOR_FIRE_STATUS = 2, // 火灾状态 (0=正常, 1=预警, 2=确认)
+    IOT_SENSOR_RAIN_STATUS = 3, // 雨滴状态 (0=干燥, 1=下雨)
+    IOT_SENSOR_HELP_STATUS = 4, // 求助状态 (0=无, 1=求助)
+    IOT_SENSOR_RAIN_ADC_MV = 5  // 雨滴传感器ADC(mV)
 } iot_sensor_type_t;
 
 /* ================= 设备ID定义 ================= */

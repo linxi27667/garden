@@ -20,7 +20,6 @@ typedef enum {
     ALARM_STATE_PENDING = 0,    // 等待触发
     ALARM_STATE_TRIGGERED = 1,  // 已触发
     ALARM_STATE_DISMISSED = 2,  // 已关闭
-    ALARM_STATE_SNOOZED = 3,    // 贪睡中
 } alarm_state_t;
 
 typedef struct {
@@ -33,8 +32,6 @@ typedef struct {
     char medicine_name[32];     // 保留字段（NVS兼容，不再使用）
     bool repeat_daily;          // 是否每天重复
     bool enabled;
-    int snooze_count;           // 贪睡次数
-    int snooze_minutes;         // 贪睡间隔（分钟）
 } alarm_info_t;
 
 typedef struct {
@@ -56,8 +53,6 @@ int Alarm_Mcp_Add_Alarm(int hour, int minute, const char* message, bool repeat_d
 bool Alarm_Mcp_Remove(int alarm_id);
 
 bool Alarm_Mcp_Dismiss(int alarm_id);
-
-bool Alarm_Mcp_Snooze(int alarm_id, int minutes);
 
 alarm_info_t* Alarm_Mcp_Get_By_Id(int alarm_id);
 

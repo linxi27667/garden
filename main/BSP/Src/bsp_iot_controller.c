@@ -17,6 +17,11 @@
 
 static const char* TAG = "BSP_IOT";
 
+#define GARDEN_DEVICE_ID            10
+#define GARDEN_LIGHT_COUNT          3
+#define GARDEN_RELAY_COUNT          4
+#define GARDEN_SERVO_GPIO_BASE      (GARDEN_LIGHT_COUNT + GARDEN_RELAY_COUNT)
+
 typedef struct {
     const char* alias;
     const char* real_name;
@@ -50,6 +55,17 @@ static const device_name_alias_t g_device_aliases[] = {
     {NULL, NULL}
 };
 
+static const char* g_garden_gpio_names[] = {
+    "courtyard_west_light",
+    "strip_light",
+    "corridor_long_light",
+    "fan",
+    "water_pump",
+    "atomizer",
+    "safety_switch",
+    "clothes_servo"
+};
+
 static const char* IOT_Resolve_Alias(const char* name) {
     if (name == NULL) return NULL;
     for (int i = 0; g_device_aliases[i].alias != NULL; i++) {
@@ -67,6 +83,43 @@ uint8_t IOT_Get_Device_Id_By_Name(const char* name) {
     if (strstr(name, "三楼") != NULL || strstr(name, "3F") != NULL) return 3;
     if (strstr(name, "智慧庭院") != NULL || strstr(name, "庭院") != NULL || strstr(name, "花园") != NULL) return 10;
     return 0;
+}
+
+static bool IOT_Is_Garden_Device(const iot_remote_device_t* device) {
+    if (device == NULL) {
+        return false;
+    }
+
+    return device->device_id == GARDEN_DEVICE_ID ||
+           strstr(device->device_name, "智慧庭院") != NULL ||
+           strstr(device->device_name, "庭院") != NULL ||
+           strstr(device->device_name, "花园") != NULL;
+}
+
+static void IOT_Assign_Garden_GPIO_Names(iot_remote_device_t* device) {
+    if (device == NULL || !IOT_Is_Garden_Device(device)) {
+        return;
+    }
+
+    int count = device->gpio_count;
+    int garden_name_count = sizeof(g_garden_gpio_names) / sizeof(g_garden_gpio_names[0]);
+    if (count > garden_name_count) {
+        count = garden_name_count;
+    }
+
+    for (int i = 0; i < count; i++) {
+        strncpy(device->gpios[i].name, g_garden_gpio_names[i], sizeof(device->gpios[i].name) - 1);
+        device->gpios[i].name[sizeof(device->gpios[i].name) - 1] = '\0';
+        device->gpios[i].mode = IOT_GPIO_MODE_OUTPUT;
+    }
+}
+
+static int IOT_Get_Servo_GPIO_Base(const iot_remote_device_t* device) {
+    if (IOT_Is_Garden_Device(device)) {
+        return GARDEN_SERVO_GPIO_BASE;
+    }
+
+    return 6;
 }
 
 int IOT_Add_Remote_Device(iot_controller_t* dev, const char* name, const uint8_t* mac, int gpio_count) {
@@ -102,6 +155,8 @@ int IOT_Add_Remote_Device(iot_controller_t* dev, const char* name, const uint8_t
         }
         dev->remote_devices[index].gpios[i].mode = IOT_GPIO_MODE_OUTPUT;
     }
+
+    IOT_Assign_Garden_GPIO_Names(&dev->remote_devices[index]);
 
     dev->remote_device_count++;
 
@@ -233,14 +288,15 @@ bool IOT_Set_Remote_Servo(iot_controller_t* dev, int device_index, int servo_ind
         return false;
     }
 
-    if (servo_index < 0 || servo_index >= dev->remote_devices[device_index].gpio_count) {
+    int gpio_index = IOT_Get_Servo_GPIO_Base(&dev->remote_devices[device_index]) + servo_index;
+    if (servo_index < 0 || gpio_index >= dev->remote_devices[device_index].gpio_count) {
         return false;
     }
 
     iot_command_packet_t cmd = {
         .command = IOT_CMD_SET_SERVO,
         .device_id = dev->remote_devices[device_index].device_id,
-        .gpio_index = servo_index,
+        .gpio_index = gpio_index,
         .value = angle,
         .reserved = {0}
     };
@@ -250,7 +306,7 @@ bool IOT_Set_Remote_Servo(iot_controller_t* dev, int device_index, int servo_ind
         snprintf(topic, sizeof(topic), MQTT_TOPIC_CMD_PREFIX "%d", dev->remote_devices[device_index].device_id);
         bool result = dev->Mqtt_Publish(topic, (const uint8_t*)&cmd, sizeof(cmd));
         if (result) {
-            dev->remote_devices[device_index].gpio_states[servo_index] = angle;
+            dev->remote_devices[device_index].gpio_states[gpio_index] = angle;
         }
         return result;
     }
@@ -306,10 +362,20 @@ void IOT_Process_Remote_Response(iot_controller_t* dev, const uint8_t* mac, cons
             if (new_gpio_count > dev->remote_devices[found_index].gpio_count) {
                 dev->remote_devices[found_index].gpio_count = new_gpio_count;
             }
+            dev->remote_devices[found_index].device_id =
+                IOT_Get_Device_Id_By_Name(dev->remote_devices[found_index].device_name);
+            IOT_Assign_Garden_GPIO_Names(&dev->remote_devices[found_index]);
             if (dev->Log_Info) {
                 dev->Log_Info(TAG, "Updated device info: %s (MAC: %02X:%02X:%02X:%02X:%02X:%02X, GPIOs: %d)",
                               announce->device_name, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5],
                               dev->remote_devices[found_index].gpio_count);
+            }
+        } else if (resp->command == IOT_CMD_RESPONSE) {
+            if (resp->gpio_index < dev->remote_devices[found_index].gpio_count) {
+                dev->remote_devices[found_index].gpio_states[resp->gpio_index] = resp->value;
+                ESP_LOGI(TAG, "GPIO state updated: %s[%d]=%d (origin=%d)",
+                         dev->remote_devices[found_index].device_name,
+                         resp->gpio_index, resp->value, resp->reserved[0]);
             }
         } else {
             ESP_LOGW(TAG, ">>> Not ANNOUNCE_V2: cmd=%d, len=%d < sizeof(iot_announce_v2_packet_t)=%d",
@@ -408,7 +474,7 @@ bool IOT_Set_Relay(iot_controller_t* dev, int device_index, uint8_t relay_index,
     if (dev == NULL || device_index < 0 || device_index >= dev->remote_device_count) {
         return false;
     }
-    int gpio_index = 3 + relay_index;
+    int gpio_index = GARDEN_LIGHT_COUNT + relay_index;
     if (gpio_index < 0 || gpio_index >= dev->remote_devices[device_index].gpio_count) {
         return false;
     }
@@ -502,7 +568,15 @@ bool IOT_Broadcast_Lights_On(iot_controller_t* dev) {
     };
 
     if (dev->Mqtt_Publish) {
-        return dev->Mqtt_Publish(MQTT_TOPIC_CMD_BROADCAST, (const uint8_t*)&cmd, sizeof(cmd));
+        bool result = dev->Mqtt_Publish(MQTT_TOPIC_CMD_BROADCAST, (const uint8_t*)&cmd, sizeof(cmd));
+        if (result) {
+            for (int d = 0; d < dev->remote_device_count; d++) {
+                for (int g = 0; g < 3 && g < dev->remote_devices[d].gpio_count; g++) {
+                    dev->remote_devices[d].gpio_states[g] = 1;
+                }
+            }
+        }
+        return result;
     }
     return false;
 }
@@ -515,7 +589,7 @@ void IOT_Check_Device_Timeout(iot_controller_t* dev, uint32_t timeout_ms) {
     for (int i = 0; i < dev->remote_device_count; i++) {
         if (!dev->remote_devices[i].online) continue;
 
-        uint32_t elapsed = current_time_ms - dev->remote_devices[i].last_heartbeat_ms;
+        uint32_t elapsed = (uint32_t)(current_time_ms - dev->remote_devices[i].last_heartbeat_ms);
         if (elapsed > timeout_ms) {
             dev->remote_devices[i].online = false;
             IOT_Log_Event(dev, "%s 离线", dev->remote_devices[i].device_name);
@@ -530,11 +604,11 @@ bool IOT_Set_Servo(iot_controller_t* dev, int device_index, uint8_t servo_index,
     if (dev == NULL || device_index < 0 || device_index >= dev->remote_device_count) {
         return false;
     }
-    int gpio_index = 6 + servo_index;
+    int gpio_index = IOT_Get_Servo_GPIO_Base(&dev->remote_devices[device_index]) + servo_index;
     if (gpio_index < 0 || gpio_index >= dev->remote_devices[device_index].gpio_count) {
         return false;
     }
-    return IOT_Set_Remote_Servo(dev, device_index, gpio_index, angle);
+    return IOT_Set_Remote_Servo(dev, device_index, servo_index, angle);
 }
 
 void IOT_Process_Sensor_Data(iot_controller_t* dev, const uint8_t* mac, const uint8_t* data, int len) {
@@ -551,15 +625,19 @@ void IOT_Process_Sensor_Data(iot_controller_t* dev, const uint8_t* mac, const ui
         if (root) {
             cJSON* item;
             item = cJSON_GetObjectItem(root, "soil_mv");
-            if (item) s->smoke_mv = (uint16_t)item->valueint;
-            item = cJSON_GetObjectItem(root, "light_mv");
-            if (item) s->rain_mv = (uint16_t)item->valueint;
+            if (item) s->soil_mv = (uint16_t)item->valueint;
+            item = cJSON_GetObjectItem(root, "rain_mv");
+            if (item) s->rain_adc_mv = (uint16_t)item->valueint;
             item = cJSON_GetObjectItem(root, "fire_status");
             if (item) s->fire_status = (uint8_t)item->valueint;
             item = cJSON_GetObjectItem(root, "rain_status");
             if (item) s->rain_status = (uint8_t)item->valueint;
             item = cJSON_GetObjectItem(root, "help_status");
             if (item) s->help_status = (uint8_t)item->valueint;
+            item = cJSON_GetObjectItem(root, "temperature");
+            if (item) s->temperature = (float)item->valuedouble;
+            item = cJSON_GetObjectItem(root, "humidity");
+            if (item) s->humidity = (float)item->valuedouble;
             cJSON_Delete(root);
         }
         return;
@@ -573,11 +651,11 @@ void IOT_Process_Sensor_Data(iot_controller_t* dev, const uint8_t* mac, const ui
     uint16_t value_16 = (uint16_t)pkt->value | ((uint16_t)pkt->reserved[0] << 8);
 
     switch (pkt->gpio_index) {
-        case IOT_SENSOR_SMOKE_MV:    s->smoke_mv = value_16; break;
-        case IOT_SENSOR_RAIN_MV:     s->rain_mv = value_16; break;
+        case IOT_SENSOR_SOIL_MV:     s->soil_mv = value_16; break;
         case IOT_SENSOR_FIRE_STATUS: s->fire_status = pkt->value; break;
         case IOT_SENSOR_RAIN_STATUS: s->rain_status = pkt->value; break;
         case IOT_SENSOR_HELP_STATUS: s->help_status = pkt->value; break;
+        case IOT_SENSOR_RAIN_ADC_MV: s->rain_adc_mv = value_16; break;
     }
 }
 
@@ -596,12 +674,14 @@ void IOT_Get_Sensors_Json(iot_controller_t* dev, char* buffer, int buffer_size) 
         first = false;
 
         offset += snprintf(buffer + offset, buffer_size - offset,
-            "{\"name\":\"%s\",\"online\":%s,\"smoke_mv\":%d,\"rain_mv\":%d,"
-            "\"fire_status\":%d,\"rain_status\":%d,\"help_status\":%d,\"updated_ms\":%lu}",
+            "{\"name\":\"%s\",\"online\":%s,\"soil_mv\":%d,\"rain_adc_mv\":%d,"
+            "\"fire_status\":%d,\"rain_status\":%d,\"help_status\":%d,"
+            "\"temperature\":%.1f,\"humidity\":%.1f,\"updated_ms\":%lu}",
             d->device_name,
             d->online ? "true" : "false",
-            s->smoke_mv, s->rain_mv,
+            s->soil_mv, s->rain_adc_mv,
             s->fire_status, s->rain_status, s->help_status,
+            s->temperature, s->humidity,
             (unsigned long)s->last_update_ms);
     }
 

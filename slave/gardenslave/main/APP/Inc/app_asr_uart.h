@@ -12,13 +12,11 @@
 
 #define ASR_CMD_FIRE_ALERT    0x01
 #define ASR_CMD_HELP_ALERT    0x02
-#define ASR_CMD_EMERGENCY     0x03
 
 extern asr_uart_t g_asr_uart_dev;
 
 void App_ASR_UART_Init(void);
 void App_ASR_Send_Fire_Alert(void);
 void App_ASR_Send_Help_Alert(void);
-void App_ASR_Send_Emergency_Alert(void);
 
 #endif

@@ -1,15 +1,17 @@
 #include "iot_control_task.h"
 #include "mqtt_receive.h"
 #include "app_asr_uart.h"
-#include "mqtt_iot_protocol.h"
 
 #include "esp_log.h"
 #include "driver/gpio.h"
 #include "driver/ledc.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include <string.h>
 
 static const char* TAG = "IOT_CTRL";
+
+TaskHandle_t s_iot_ctrl_task_handle = NULL;
 
 #define LEDC_TIMER              LEDC_TIMER_0
 #define LEDC_MODE               LEDC_LOW_SPEED_MODE
@@ -71,18 +73,18 @@ static void HW_Servo_Set_Angle(ledc_channel_t channel, int16_t angle) {
     ledc_update_duty(LEDC_MODE, channel);
 }
 
-#define LIGHT_CORRIDOR_GPIO  GPIO_NUM_2
-#define LIGHT_STRIP_GPIO     GPIO_NUM_4
-#define LIGHT_VEG_GPIO       GPIO_NUM_5
-#define FAN_RELAY_GPIO       GPIO_NUM_6
-#define WATER_PUMP_GPIO      GPIO_NUM_7
-#define ATOMIZER_GPIO        GPIO_NUM_15
-#define SAFETY_SWITCH_GPIO   GPIO_NUM_16
+#define LIGHT_CORRIDOR_GPIO  GPIO_NUM_11
+#define LIGHT_STRIP_GPIO     GPIO_NUM_12
+#define LIGHT_VEG_GPIO       GPIO_NUM_13
+#define FAN_RELAY_GPIO       GPIO_NUM_14
+#define WATER_PUMP_GPIO      GPIO_NUM_15
+#define ATOMIZER_GPIO        GPIO_NUM_16
+#define SAFETY_SWITCH_GPIO   GPIO_NUM_17
 #define SERVO_CLOTHES_GPIO   GPIO_NUM_18
 
-#define FIRE_PIN             GPIO_NUM_10
-#define HELP_PIN             GPIO_NUM_11
-#define DHT_PIN              GPIO_NUM_8
+#define FIRE_PIN             GPIO_NUM_2
+#define HELP_PIN             GPIO_NUM_48
+#define DHT_PIN              GPIO_NUM_38
 
 #define REFRESH_INTERVAL_MS  100
 
@@ -97,8 +99,8 @@ static gpio_num_t g_relay_gpios[RELAY_COUNT] = {
 static gpio_num_t g_servo_gpios[SERVO_COUNT] = {SERVO_CLOTHES_GPIO};
 
 volatile device_flags_enum_t g_device_flags = {
-    .light = {OFF, OFF, OFF},
-    .relay = {OFF, OFF, OFF, OFF},
+    .light = {SWITCH_OFF, SWITCH_OFF, SWITCH_OFF},
+    .relay = {SWITCH_OFF, SWITCH_OFF, SWITCH_OFF, SWITCH_OFF},
     .servo = {SERVO_MIN_ANGLE},
     .fire_status = FIRE_NORMAL,
     .auto_mode = true
@@ -106,22 +108,42 @@ volatile device_flags_enum_t g_device_flags = {
 
 SemaphoreHandle_t g_device_flags_mutex = NULL;
 
-static volatile bool g_fire_detected = false;
 volatile bool g_help_detected = false;
-volatile bool g_rain_alert_triggered = false;
 
-static bool atomic_flag_exchange(volatile bool* flag, bool new_val) {
-    bool old = *flag;
-    *flag = new_val;
-    return old;
+bool Iot_Device_Flags_Lock(const char* caller) {
+    if (g_device_flags_mutex == NULL) {
+        ESP_LOGE(TAG, "Device flags mutex not ready: %s", caller ? caller : "unknown");
+        return false;
+    }
+
+    if (xSemaphoreTake(g_device_flags_mutex, portMAX_DELAY) != pdTRUE) {
+        ESP_LOGE(TAG, "Failed to lock device flags: %s", caller ? caller : "unknown");
+        return false;
+    }
+
+    return true;
+}
+
+void Iot_Device_Flags_Unlock(const char* caller) {
+    if (g_device_flags_mutex == NULL) {
+        ESP_LOGE(TAG, "Device flags mutex missing on unlock: %s", caller ? caller : "unknown");
+        return;
+    }
+
+    xSemaphoreGive(g_device_flags_mutex);
 }
 
 static void IRAM_ATTR fire_isr_handler(void* arg) {
-    g_fire_detected = true;
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    xTaskNotifyFromISR(s_iot_ctrl_task_handle, NOTIFY_FIRE_BIT, eSetBits, &xHigherPriorityTaskWoken);
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
 static void IRAM_ATTR help_isr_handler(void* arg) {
     g_help_detected = true;
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    xTaskNotifyFromISR(s_iot_ctrl_task_handle, NOTIFY_HELP_BIT, eSetBits, &xHigherPriorityTaskWoken);
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
 static void Init_Interrupt_Pins(void) {
@@ -153,21 +175,27 @@ static void Init_Interrupt_Pins(void) {
 void Iot_Fire_Emergency_Response(void) {
     ESP_LOGW(TAG, "=== FIRE EMERGENCY RESPONSE (SLAVE) ===");
 
+    bool first_fire_report = false;
+
     DEVICE_FLAGS_LOCK();
+    first_fire_report = (g_device_flags.fire_status != FIRE_CONFIRMED);
     g_device_flags.fire_status = FIRE_CONFIRMED;
-    g_device_flags.relay[3] = ON;
-    g_device_flags.relay[1] = OFF;
-    g_device_flags.relay[2] = OFF;
+    g_device_flags.relay[3] = SWITCH_ON;
+    g_device_flags.relay[1] = SWITCH_OFF;
+    g_device_flags.relay[2] = SWITCH_OFF;
     for (int i = 0; i < LIGHT_COUNT; i++) {
-        g_device_flags.light[i] = ON;
+        g_device_flags.light[i] = SWITCH_ON;
     }
     DEVICE_FLAGS_UNLOCK();
 
-    MQTT_Publish_Emergency(EMERGENCY_FIRE, "Fire detected by smoke sensor");
+    if (first_fire_report) {
+        MQTT_Publish_Emergency(EMERGENCY_FIRE, "Fire detected by smoke sensor");
+        App_ASR_Send_Fire_Alert();
+    } else {
+        ESP_LOGW(TAG, "Fire already confirmed, local outputs refreshed without duplicate report");
+    }
 
-    App_ASR_Send_Fire_Alert();
-
-    ESP_LOGW(TAG, "Fire emergency: safety switch TRIPPED, pump/atomizer OFF, all lights ON, MQTT alert sent");
+    ESP_LOGW(TAG, "Fire emergency: safety switch TRIPPED, pump/atomizer OFF, all lights ON");
 }
 
 void Iot_Help_Emergency_Response(void) {
@@ -175,7 +203,7 @@ void Iot_Help_Emergency_Response(void) {
 
     DEVICE_FLAGS_LOCK();
     for (int i = 0; i < LIGHT_COUNT; i++) {
-        g_device_flags.light[i] = ON;
+        g_device_flags.light[i] = SWITCH_ON;
     }
     DEVICE_FLAGS_UNLOCK();
 
@@ -231,17 +259,20 @@ static void Device_Refresh_Task(void* arg) {
         }
         DEVICE_FLAGS_UNLOCK();
 
-        if (atomic_flag_exchange(&g_fire_detected, false)) {
+        uint32_t notified_bits = 0;
+        xTaskNotifyWait(0, NOTIFY_FIRE_BIT | NOTIFY_HELP_BIT | NOTIFY_RAIN_BIT, &notified_bits, 0);
+
+        if (notified_bits & NOTIFY_FIRE_BIT) {
             ESP_LOGW(TAG, "FIRE DETECTED via GPIO interrupt!");
             Iot_Fire_Emergency_Response();
         }
 
-        if (atomic_flag_exchange(&g_help_detected, false)) {
+        if (notified_bits & NOTIFY_HELP_BIT) {
             ESP_LOGW(TAG, "HELP button pressed!");
             Iot_Help_Emergency_Response();
         }
 
-        if (atomic_flag_exchange(&g_rain_alert_triggered, false)) {
+        if (notified_bits & NOTIFY_RAIN_BIT) {
             Iot_Rain_Alert_Response();
         }
 
@@ -253,6 +284,7 @@ void Iot_Control_Task_Init(void) {
     g_device_flags_mutex = xSemaphoreCreateMutex();
     if (g_device_flags_mutex == NULL) {
         ESP_LOGE(TAG, "Failed to create device flags mutex");
+        return;
     }
 
     App_ASR_UART_Init();
@@ -263,7 +295,7 @@ void Iot_Control_Task_Init(void) {
         4096,
         NULL,
         3,
-        NULL
+        &s_iot_ctrl_task_handle
     );
 
     if (ret != pdPASS) {

@@ -20,7 +20,9 @@ static esp_mqtt_client_handle_t s_mqtt_client = NULL;
 
 static iot_controller_t g_iot_controller;
 
-#define MAX_MQTT_CMD_CALLBACKS 4
+#define EMERGENCY_ALERT_DEDUP_MS 10000
+
+#define MAX_MQTT_CMD_CALLBACKS 8
 static struct {
     char topic_prefix[64];
     iot_mqtt_cmd_callback_t callback;
@@ -31,10 +33,16 @@ static void HW_MQTT_Recv_Callback(const char* topic, int topic_len, const char* 
 static bool HW_MQTT_Init(void);
 static bool HW_MQTT_Publish(const char* topic, const uint8_t* data, uint16_t len);
 
-#define LOCAL_GPIO_1_PIN    GPIO_NUM_48
-#define LOCAL_GPIO_2_PIN    GPIO_NUM_46
-#define LOCAL_GPIO_3_PIN    GPIO_NUM_14
-#define LOCAL_GPIO_4_PIN    GPIO_NUM_38
+static int App_IOT_Get_Servo_GPIO_Base(const char* device_name) {
+    if (device_name != NULL &&
+        (strstr(device_name, "智慧庭院") != NULL ||
+         strstr(device_name, "庭院") != NULL ||
+         strstr(device_name, "花园") != NULL)) {
+        return 7;
+    }
+
+    return 6;
+}
 
 static void HW_Gpio_Init(void* port, uint16_t pin, iot_gpio_mode_t mode, uint8_t default_level) {
     gpio_config_t io_conf = {
@@ -75,6 +83,30 @@ static bool Dispatch_MQTT_Callbacks(const char* topic, const char* data, int dat
     }
 
     return dispatched;
+}
+
+static bool Should_Handle_Emergency_Alert(const uint8_t* mac, const char* type) {
+    static uint8_t s_last_mac[6] = {0};
+    static char s_last_type[16] = {0};
+    static uint32_t s_last_ms = 0;
+
+    if (mac == NULL || type == NULL) {
+        return true;
+    }
+
+    uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000);
+    if (memcmp(s_last_mac, mac, sizeof(s_last_mac)) == 0 &&
+        strcmp(s_last_type, type) == 0 &&
+        (uint32_t)(now_ms - s_last_ms) < EMERGENCY_ALERT_DEDUP_MS) {
+        ESP_LOGW(TAG, "Duplicate emergency suppressed: type=%s", type);
+        return false;
+    }
+
+    memcpy(s_last_mac, mac, sizeof(s_last_mac));
+    strncpy(s_last_type, type, sizeof(s_last_type) - 1);
+    s_last_type[sizeof(s_last_type) - 1] = '\0';
+    s_last_ms = now_ms;
+    return true;
 }
 
 static void HW_MQTT_Recv_Callback(const char* topic, int topic_len, const char* data, int data_len) {
@@ -149,7 +181,9 @@ static void HW_MQTT_Recv_Callback(const char* topic, int topic_len, const char* 
 
             IOT_Update_Heartbeat(&g_iot_controller, src_mac);
 
-            App_IOT_Emergency_Alert(type_str, detail);
+            if (Should_Handle_Emergency_Alert(src_mac, type_str)) {
+                App_IOT_Emergency_Alert(type_str, detail);
+            }
 
             cJSON_Delete(root);
         }
@@ -315,6 +349,18 @@ int App_IOT_Get_GPIO(const char* device_name, const char* gpio_name) {
                 return IOT_Get_Local_GPIO(&g_iot_controller, i);
             }
         }
+        return -1;
+    }
+
+    int device_index = IOT_Find_Device_By_Name(&g_iot_controller, device_name);
+    if (device_index < 0) {
+        return -1;
+    }
+
+    for (int i = 0; i < g_iot_controller.remote_devices[device_index].gpio_count; i++) {
+        if (strcmp(g_iot_controller.remote_devices[device_index].gpios[i].name, gpio_name) == 0) {
+            return IOT_Get_Remote_GPIO(&g_iot_controller, device_index, i);
+        }
     }
     return -1;
 }
@@ -359,7 +405,9 @@ bool App_IOT_Set_Servo(const char* device_name, const char* gpio_name, uint8_t a
     
     for (int i = 0; i < g_iot_controller.remote_devices[device_index].gpio_count; i++) {
         if (strcmp(g_iot_controller.remote_devices[device_index].gpios[i].name, gpio_name) == 0) {
-            return IOT_Set_Remote_Servo(&g_iot_controller, device_index, i, angle);
+            int base = App_IOT_Get_Servo_GPIO_Base(g_iot_controller.remote_devices[device_index].device_name);
+            int servo_index = (i >= base) ? (i - base) : i;
+            return IOT_Set_Remote_Servo(&g_iot_controller, device_index, servo_index, angle);
         }
     }
     
@@ -450,8 +498,10 @@ void App_IOT_Get_All_Status(char* buffer, int buffer_size) {
         for (int g = 0; g < g_iot_controller.remote_devices[d].gpio_count && offset < buffer_size - 50; g++) {
             if (g > 0) offset += snprintf(buffer + offset, buffer_size - offset, ",");
             offset += snprintf(buffer + offset, buffer_size - offset,
-                              "{\"index\":%d,\"value\":%d}",
-                              g, g_iot_controller.remote_devices[d].gpio_states[g]);
+                              "{\"index\":%d,\"name\":\"%s\",\"value\":%d}",
+                              g,
+                              g_iot_controller.remote_devices[d].gpios[g].name,
+                              g_iot_controller.remote_devices[d].gpio_states[g]);
         }
 
         offset += snprintf(buffer + offset, buffer_size - offset, "]}");
@@ -621,10 +671,6 @@ void App_IOT_Emergency_Alert(const char* type, const char* detail) {
     ESP_LOGW(TAG, "=== EMERGENCY ALERT: type=%s, detail=%s ===", type, detail);
 
     IOT_Log_Event(&g_iot_controller, "紧急事件: %s - %s", type, detail);
-
-    if (strcmp(type, "fire") == 0) {
-        App_IOT_Scenario_Emergency();
-    }
 
     if (s_emergency_alert_cb != NULL) {
         s_emergency_alert_cb(type, detail);

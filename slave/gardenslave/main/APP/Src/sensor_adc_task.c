@@ -5,6 +5,7 @@
 #include "mqtt_iot_protocol.h"
 
 #include "esp_log.h"
+#include "esp_rom_sys.h"
 #include "driver/gpio.h"
 #include "driver/adc.h"
 #include "mqtt_client.h"
@@ -17,8 +18,8 @@ static const char* TAG = "SENSOR_ADC";
 static void HW_ADC_Init(void) {
     adc1_config_width(ADC_WIDTH_BIT_12);
     adc1_config_channel_atten(SOIL_ADC_CHANNEL, SOIL_ADC_ATTEN);
-    adc1_config_channel_atten(LIGHT_ADC_CHANNEL, LIGHT_ADC_ATTEN);
-    ESP_LOGI(TAG, "ADC initialized: Soil=CH0(GPIO1), Light=CH2(GPIO3)");
+    adc1_config_channel_atten(RAIN_ADC_CHANNEL, RAIN_ADC_ATTEN);
+    ESP_LOGI(TAG, "ADC initialized: Soil=GPIO1(CH0), Rain=GPIO4(CH3)");
 }
 
 static int32_t ADC_Get_Voltage_MV(adc1_channel_t channel) {
@@ -41,9 +42,9 @@ static bool DHT11_Read(uint8_t pin, float* temperature, float* humidity) {
     };
     gpio_config(&out_conf);
     gpio_set_level((gpio_num_t)pin, 0);
-    ets_delay_us(18000);
+    esp_rom_delay_us(18000);
     gpio_set_level((gpio_num_t)pin, 1);
-    ets_delay_us(30);
+    esp_rom_delay_us(30);
 
     gpio_config_t in_conf = {
         .pin_bit_mask = (1ULL << pin),
@@ -56,29 +57,29 @@ static bool DHT11_Read(uint8_t pin, float* temperature, float* humidity) {
 
     int timeout = 0;
     while (gpio_get_level((gpio_num_t)pin) == 1) {
-        ets_delay_us(1);
+        esp_rom_delay_us(1);
         if (++timeout > 80) return false;
     }
     timeout = 0;
     while (gpio_get_level((gpio_num_t)pin) == 0) {
-        ets_delay_us(1);
+        esp_rom_delay_us(1);
         if (++timeout > 80) return false;
     }
     timeout = 0;
     while (gpio_get_level((gpio_num_t)pin) == 1) {
-        ets_delay_us(1);
+        esp_rom_delay_us(1);
         if (++timeout > 80) return false;
     }
 
     for (int i = 0; i < 40; i++) {
         timeout = 0;
         while (gpio_get_level((gpio_num_t)pin) == 0) {
-            ets_delay_us(1);
+            esp_rom_delay_us(1);
             if (++timeout > 100) return false;
         }
         int high_us = 0;
         while (gpio_get_level((gpio_num_t)pin) == 1) {
-            ets_delay_us(1);
+            esp_rom_delay_us(1);
             if (++high_us > 100) return false;
         }
         data[i / 8] <<= 1;
@@ -96,10 +97,19 @@ static bool DHT11_Read(uint8_t pin, float* temperature, float* humidity) {
     return true;
 }
 
-static uint8_t g_rain_exceed_count = 0;
+static uint16_t g_rain_exceed_count = 0;
 static float g_temperature = 0;
 static float g_humidity = 0;
 static bool g_dht_valid = false;
+
+#define AUTO_CTRL_COOLDOWN_MS  30000
+static uint32_t g_relay_manual_time[RELAY_COUNT] = {0};
+
+void Sensor_ADC_Notify_Relay_Manual(uint8_t relay_index) {
+    if (relay_index < RELAY_COUNT) {
+        g_relay_manual_time[relay_index] = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    }
+}
 
 static void Sensor_ADC_Task(void* arg) {
     ESP_LOGI(TAG, "Sensor ADC task started");
@@ -107,26 +117,25 @@ static void Sensor_ADC_Task(void* arg) {
 
     while (1) {
         int32_t soil_mv = ADC_Get_Voltage_MV(SOIL_ADC_CHANNEL);
-        int32_t light_mv = ADC_Get_Voltage_MV(LIGHT_ADC_CHANNEL);
+        int32_t rain_mv = ADC_Get_Voltage_MV(RAIN_ADC_CHANNEL);
 
         int32_t soil_percent = (soil_mv * 100) / 3100;
         if (soil_percent > 100) soil_percent = 100;
         if (soil_percent < 0) soil_percent = 0;
 
-        int32_t light_percent = (light_mv * 100) / 3100;
-        if (light_percent > 100) light_percent = 100;
-        if (light_percent < 0) light_percent = 0;
-
-        uint8_t rain_wet = (light_mv <= RAIN_THRESHOLD_LIGHT) ? 1 : 0;
+        uint8_t rain_wet = (rain_mv <= RAIN_THRESHOLD_MV) ? 1 : 0;
 
         if (rain_wet) {
-            if (++g_rain_exceed_count >= RAIN_TRIGGER_COUNT) {
+            if (g_rain_exceed_count < RAIN_TRIGGER_COUNT + 10) {
+                g_rain_exceed_count++;
+            }
+            if (g_rain_exceed_count >= RAIN_TRIGGER_COUNT) {
                 if (g_device_flags.auto_mode) {
                     DEVICE_FLAGS_LOCK();
                     if (g_device_flags.servo[0] != SERVO_MIN_ANGLE) {
                         ESP_LOGI(TAG, "[RAIN] Auto collecting clothes");
                         g_device_flags.servo[0] = SERVO_MIN_ANGLE;
-                        g_rain_alert_triggered = true;
+                        xTaskNotify(s_iot_ctrl_task_handle, NOTIFY_RAIN_BIT, eSetBits);
                     }
                     DEVICE_FLAGS_UNLOCK();
                 }
@@ -138,21 +147,34 @@ static void Sensor_ADC_Task(void* arg) {
         g_dht_valid = DHT11_Read(DHT_PIN, &g_temperature, &g_humidity);
 
         if (g_device_flags.auto_mode && g_dht_valid) {
+            uint32_t now_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
             DEVICE_FLAGS_LOCK();
             if (g_temperature > -40.0f && g_temperature < 80.0f) {
                 if (g_temperature > 35.0f) {
-                    if (g_device_flags.relay[0] == OFF) g_device_flags.relay[0] = ON;
-                    if (g_device_flags.relay[2] == OFF) g_device_flags.relay[2] = ON;
+                    if ((now_ms - g_relay_manual_time[0]) >= AUTO_CTRL_COOLDOWN_MS) {
+                        if (g_device_flags.relay[0] == SWITCH_OFF) g_device_flags.relay[0] = SWITCH_ON;
+                    }
+                    if ((now_ms - g_relay_manual_time[2]) >= AUTO_CTRL_COOLDOWN_MS) {
+                        if (g_device_flags.relay[2] == SWITCH_OFF) g_device_flags.relay[2] = SWITCH_ON;
+                    }
                 } else if (g_temperature < 10.0f) {
-                    if (g_device_flags.relay[0] == ON) g_device_flags.relay[0] = OFF;
-                    if (g_device_flags.relay[2] == ON && g_humidity > 40.0f) g_device_flags.relay[2] = OFF;
+                    if ((now_ms - g_relay_manual_time[0]) >= AUTO_CTRL_COOLDOWN_MS) {
+                        if (g_device_flags.relay[0] == SWITCH_ON) g_device_flags.relay[0] = SWITCH_OFF;
+                    }
+                    if ((now_ms - g_relay_manual_time[2]) >= AUTO_CTRL_COOLDOWN_MS) {
+                        if (g_device_flags.relay[2] == SWITCH_ON && g_humidity > 40.0f) g_device_flags.relay[2] = SWITCH_OFF;
+                    }
                 }
             }
             if (g_humidity > 0.0f && g_humidity < 100.0f) {
                 if (g_humidity < 20.0f) {
-                    if (g_device_flags.relay[2] == OFF) g_device_flags.relay[2] = ON;
+                    if ((now_ms - g_relay_manual_time[2]) >= AUTO_CTRL_COOLDOWN_MS) {
+                        if (g_device_flags.relay[2] == SWITCH_OFF) g_device_flags.relay[2] = SWITCH_ON;
+                    }
                 } else if (g_humidity > 80.0f) {
-                    if (g_device_flags.relay[0] == OFF) g_device_flags.relay[0] = ON;
+                    if ((now_ms - g_relay_manual_time[0]) >= AUTO_CTRL_COOLDOWN_MS) {
+                        if (g_device_flags.relay[0] == SWITCH_OFF) g_device_flags.relay[0] = SWITCH_ON;
+                    }
                 }
             }
             DEVICE_FLAGS_UNLOCK();
@@ -166,16 +188,16 @@ static void Sensor_ADC_Task(void* arg) {
         if (now - last_report >= 5000) {
             esp_mqtt_client_handle_t client = MQTT_Get_Client();
             const char* mac = MQTT_Get_MAC_Str();
-            if (client && mac) {
+            if (client && mac && MQTT_Is_Connected()) {
                 char topic[64];
                 snprintf(topic, sizeof(topic), MQTT_TOPIC_SENSOR_PREFIX "%s", mac);
 
-                char payload[256];
+                char payload[320];
                 int len = snprintf(payload, sizeof(payload),
-                    "{\"soil_mv\":%d,\"light_mv\":%d,\"fire_status\":%d,"
+                    "{\"soil_mv\":%d,\"rain_mv\":%d,\"fire_status\":%d,"
                     "\"rain_status\":%d,\"help_status\":%d,"
                     "\"temperature\":%.1f,\"humidity\":%.1f}",
-                    (int)soil_mv, (int)light_mv,
+                    (int)soil_mv, (int)rain_mv,
                     (int)g_device_flags.fire_status,
                     rain_wet, g_help_detected ? 1 : 0,
                     g_temperature, g_humidity);
@@ -183,10 +205,15 @@ static void Sensor_ADC_Task(void* arg) {
                 if (len > 0 && len < (int)sizeof(payload)) {
                     esp_mqtt_client_publish(client, topic, payload, len, 0, 0);
                 }
+            } else {
+                static uint32_t skip_count = 0;
+                if ((skip_count++ % 6) == 0) {
+                    ESP_LOGW(TAG, "MQTT not connected, sensor report skipped");
+                }
             }
-            ESP_LOGI(TAG, "Soil:%dmV(%d%%) Light:%dmV(%d%%) Rain:%s Fire:%d Help:%d Temp:%.1f Hum:%.1f",
-                     (int)soil_mv, (int)soil_percent, (int)light_mv, (int)light_percent,
-                     rain_wet ? "WET" : "DRY", fire_status, help_status,
+            ESP_LOGD(TAG, "Soil:%dmV(%d%%) Rain:%dmV(%s) Fire:%d Help:%d Temp:%.1f Hum:%.1f",
+                     (int)soil_mv, (int)soil_percent,
+                     (int)rain_mv, rain_wet ? "WET" : "DRY", fire_status, help_status,
                      g_temperature, g_humidity);
             last_report = now;
         }

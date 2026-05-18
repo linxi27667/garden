@@ -19,12 +19,13 @@
 #include "app_garden.h"
 
 #include <esp_log.h>
+#include <esp_system.h>
+#include <esp_timer.h>
 #include <driver/i2c_master.h>
 #include <esp_lcd_panel_ops.h>
 #include <esp_lcd_panel_vendor.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
-#include <freertos/semphr.h>
 #include <algorithm>
 #include <cstring>
 #include <sstream>
@@ -32,7 +33,7 @@
 
 #define TAG "CustomEsp32s3Cam"
 
-static SemaphoreHandle_t g_i2c_mutex = NULL;
+static TaskHandle_t s_sensor_alert_task_handle = nullptr;
 
 struct SensorAlertScenario {
     const char* type;
@@ -96,19 +97,27 @@ static void SensorAlertTask(void* arg) {
     auto& app = Application::GetInstance();
     app.Schedule([scenario]() {
 #if ENABLE_SENSOR_TTS_ALERT
-        if (!Application::GetInstance().SayText(scenario->text, scenario->status, scenario->emotion)) {
+        bool tts_sent = Application::GetInstance().SayText(scenario->text, scenario->status, scenario->emotion);
+        if (tts_sent) {
+            ESP_LOGI(TAG, "Sensor alert TTS sent: type=%s", scenario->type);
+        } else {
+            ESP_LOGW(TAG, "Sensor alert TTS failed, fallback to display alert: type=%s", scenario->type);
             Application::GetInstance().Alert(scenario->status, scenario->text, scenario->emotion);
         }
 #else
+        ESP_LOGW(TAG, "Sensor alert TTS disabled, using display alert only");
         Application::GetInstance().Alert(scenario->status, scenario->text, scenario->emotion);
 #endif
     });
+
+    vTaskDelay(pdMS_TO_TICKS(1500));
 
     for (int i = 0; i < scenario->beep_count; i++) {
         App_Buzzer_Beep(scenario->beep_ms);
         vTaskDelay(pdMS_TO_TICKS(scenario->gap_ms));
     }
 
+    s_sensor_alert_task_handle = nullptr;
     vTaskDelete(nullptr);
 }
 
@@ -120,10 +129,18 @@ static void DispatchSensorAlert(const char* type, const char* detail) {
         return;
     }
 
-    BaseType_t ret = xTaskCreate(SensorAlertTask, "sensor_alert", 4096,
-                                 const_cast<SensorAlertScenario*>(scenario), 4, nullptr);
+    if (s_sensor_alert_task_handle != nullptr) {
+        ESP_LOGW(TAG, "Sensor alert already running, skip duplicate type=%s", type);
+        return;
+    }
+
+    BaseType_t ret = xTaskCreate(SensorAlertTask, "sensor_alert", 3072,
+                                 const_cast<SensorAlertScenario*>(scenario), 4,
+                                 &s_sensor_alert_task_handle);
     if (ret != pdPASS) {
-        ESP_LOGE(TAG, "Failed to create sensor alert task");
+        s_sensor_alert_task_handle = nullptr;
+        ESP_LOGE(TAG, "Failed to create sensor alert task, free_heap=%lu",
+                 (unsigned long)esp_get_free_heap_size());
     }
 }
 
@@ -341,13 +358,13 @@ public:
         auto& mcp_server = McpServer::GetInstance();
 
         mcp_server.AddTool("self.iot.set_gpio",
-            "Control GPIO outputs on this device or remote ESP32 devices.\n"
-            "Use this tool to turn on/off lights, relays, LEDs, or other GPIO-controlled devices.\n"
+            "控制远程 IoT 从机设备的 GPIO 输出。\n"
+            "通过 MQTT 协议向指定从机发送 GPIO 控制指令。\n"
             "Args:\n"
-            "  device: Device name ('local' for this device, or remote device name)\n"
-            "  gpio: GPIO name (e.g., 'led1', 'relay1')\n"
-            "  value: true to turn on, false to turn off\n"
-            "Available local GPIOs: led1, led2, relay1, relay2",
+            "  device: 从机设备名（如'智慧庭院'）\n"
+            "  gpio: GPIO 名称\n"
+            "  value: true=开/false=关\n"
+            "当前系统仅有一个从机'智慧庭院'，该从机GPIO见 self.garden.* 系列工具。",
             PropertyList({
                 Property("device", kPropertyTypeString),
                 Property("gpio", kPropertyTypeString),
@@ -376,7 +393,7 @@ public:
             "Returns a list of local GPIOs and remote devices with their current states.",
             PropertyList(),
             [](const PropertyList& properties) -> ReturnValue {
-                char buffer[1024];
+                char buffer[4096];
                 Iot_Mcp_Get_Status_JSON(buffer, sizeof(buffer));
                 
                 cJSON* json = cJSON_Parse(buffer);
@@ -389,9 +406,9 @@ public:
             });
 
         mcp_server.AddTool("self.iot.get_sensors",
-            "获取所有从机传感器的实时数据。\n"
-            "返回烟雾传感器(mV)、雨滴传感器(mV)、火灾状态、下雨状态、求助按键状态。\n"
-            "二楼从机: 雨滴传感器。三楼从机: 烟雾+雨滴+求助按键。",
+            "获取智慧庭院从机的实时传感器数据。\n"
+            "返回土壤湿度(mV/%)、雨滴电压(mV)、雨滴状态(干燥/下雨)、火灾状态、求助状态、温度(°C)、湿度(%)。\n"
+            "注意：光照传感器已移除，请勿询问光照数据。传感器详情见 self.garden.get_sensors。",
             PropertyList(),
             [](const PropertyList& properties) -> ReturnValue {
                 char buffer[1024];
@@ -433,19 +450,14 @@ public:
                 
                 Iot_Mcp_Discover();
                 
-                int new_devices = Iot_Mcp_Wait_For_Response(3000);
-                
                 cJSON* json = cJSON_CreateObject();
                 
                 int total_count = Iot_Mcp_Get_Remote_Device_Count();
                 
-                if (new_devices > 0) {
-                    cJSON_AddStringToObject(json, "message", "发现新设备！");
-                    cJSON_AddNumberToObject(json, "new_devices_found", new_devices);
-                } else if (total_count > 0) {
-                    cJSON_AddStringToObject(json, "message", "未发现新设备，但有已知设备在线");
+                if (total_count > 0) {
+                    cJSON_AddStringToObject(json, "message", "发现命令已发送，下面是当前已知设备");
                 } else {
-                    cJSON_AddStringToObject(json, "message", "未发现任何远程设备");
+                    cJSON_AddStringToObject(json, "message", "发现命令已发送，等待从机 announce 或 heartbeat 更新");
                 }
                 
                 cJSON_AddNumberToObject(json, "remote_device_count", total_count);
@@ -514,17 +526,12 @@ public:
             });
 
         mcp_server.AddTool("self.iot.set_light",
-            "控制指定设备的灯光开关。\n"
+            "控制指定从机设备的灯光开关。\n"
             "Args:\n"
-            "  device: 设备名（一楼设备/二楼设备/三楼设备）\n"
+            "  device: 从机设备名（如'智慧庭院'）\n"
             "  index: 灯编号(0-2)\n"
             "  value: true=开/false=关\n"
-            "【设备-灯映射】\n"
-            "  一楼设备: index0=大厅灯\n"
-            "  二楼设备: index0=主卧灯, index1=客厅灯, index2=厕所灯\n"
-            "  三楼设备: index0=阳台灯, index1=三楼灯2, index2=三楼灯3\n"
-            "【用户说\"打开阳台灯\"→ device=三楼设备, index=0】\n"
-            "【用户说\"打开三楼灯2\"→ device=三楼设备, index=1】",
+            "推荐使用 self.garden.set_light 代替本工具以获取更精确的灯光名称映射。",
             PropertyList({
                 Property("device", kPropertyTypeString),
                 Property("index", kPropertyTypeInteger),
@@ -549,12 +556,12 @@ public:
             });
 
         mcp_server.AddTool("self.iot.set_relay",
-            "控制继电器开关。\n"
+            "控制从机设备继电器开关。\n"
             "Args:\n"
-            "  device: 设备名（一楼设备/二楼设备/三楼设备）\n"
-            "  index: 继电器编号(0-2)\n"
+            "  device: 从机设备名（如'智慧庭院'）\n"
+            "  index: 继电器编号(0-3)\n"
             "  value: true=开/false=关\n"
-            "【设备映射】二楼:index0=风扇。三楼:index0=风扇(继电器1), index1=继电器2, index2=继电器3。",
+            "推荐使用 self.garden.set_fan / set_water_pump / set_atomizer 代替，无需记忆继电器编号。",
             PropertyList({
                 Property("device", kPropertyTypeString),
                 Property("index", kPropertyTypeInteger),
@@ -579,15 +586,12 @@ public:
             });
 
         mcp_server.AddTool("self.iot.set_servo_by_index",
-            "控制舵机角度。\n"
+            "控制从机设备舵机角度。\n"
             "Args:\n"
-            "  device: 设备名（一楼设备/二楼设备/三楼设备）\n"
-            "  index: 舵机编号(0-2)\n"
+            "  device: 从机设备名（如'智慧庭院'）\n"
+            "  index: 舵机编号\n"
             "  angle: 角度(0-180)\n"
-            "【设备映射】\n"
-            "  一楼设备: index0=大门\n"
-            "  二楼设备: index0=晾衣架\n"
-            "  三楼设备: index0=左天窗, index1=右天窗, index2=晾衣架",
+            "推荐使用 self.garden.set_servo 代替本工具，用 hang/collect 语义更直观。",
             PropertyList({
                 Property("device", kPropertyTypeString),
                 Property("index", kPropertyTypeInteger),

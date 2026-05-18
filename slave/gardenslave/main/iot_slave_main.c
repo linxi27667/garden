@@ -34,18 +34,23 @@ void app_main(void) {
 
     ESP_LOGI(TAG, "Connecting to WiFi...");
     App_WiFi_System_Init();
-
-    ESP_LOGI(TAG, "Initializing MQTT...");
-    MQTT_Receive_Init();
+    ESP_LOGI(TAG, "WiFi init returned, continuing startup");
 
     ESP_LOGI(TAG, "Initializing Device Control...");
     Iot_Control_Task_Init();
+    ESP_LOGI(TAG, "Device Control init returned");
+
+    ESP_LOGI(TAG, "Initializing MQTT...");
+    MQTT_Receive_Init();
+    ESP_LOGI(TAG, "MQTT init returned");
 
     ESP_LOGI(TAG, "Initializing Heartbeat...");
     MQTT_Heartbeat_Init();
+    ESP_LOGI(TAG, "Heartbeat init returned");
 
     ESP_LOGI(TAG, "Initializing Sensors...");
     Sensor_ADC_Task_Init();
+    ESP_LOGI(TAG, "Sensor init returned");
 
     ESP_LOGI(TAG, "========================================");
     ESP_LOGI(TAG, "   Garden Slave Ready!");
