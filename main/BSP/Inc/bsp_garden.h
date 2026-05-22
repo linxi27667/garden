@@ -41,6 +41,12 @@ typedef struct {
     garden_switch_state_t strip_light;
     garden_switch_state_t veg_light;
     uint8_t veg_pwm_duty;
+    uint8_t strip_red;
+    uint8_t strip_green;
+    uint8_t strip_blue;
+    uint8_t strip_brightness;
+    uint8_t strip_effect;
+    uint8_t ambience_scene;
     garden_switch_state_t fan;
     garden_servo_state_t servo;
     garden_switch_state_t water_pump;

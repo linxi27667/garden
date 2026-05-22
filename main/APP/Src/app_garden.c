@@ -37,6 +37,63 @@ static bool Send_IoT_Command(uint8_t command, uint8_t gpio_index, uint8_t value)
     return App_IOT_MQTT_Publish(topic, (const char*)&pkt, sizeof(pkt));
 }
 
+static bool Send_Strip_RGB_Command(uint8_t red, uint8_t green, uint8_t blue,
+                                   uint8_t brightness, uint8_t effect) {
+    if (brightness > 100) {
+        brightness = 100;
+    }
+
+    iot_command_packet_t pkt = {
+        .command = IOT_CMD_SET_STRIP_RGB,
+        .device_id = GARDEN_DEVICE_ID,
+        .gpio_index = 1,
+        .value = brightness,
+        .reserved = {red, green, blue, effect}
+    };
+
+    char topic[64];
+    snprintf(topic, sizeof(topic), MQTT_TOPIC_CMD_PREFIX "%d", GARDEN_DEVICE_ID);
+
+    return App_IOT_MQTT_Publish(topic, (const char*)&pkt, sizeof(pkt));
+}
+
+static uint8_t Garden_Scene_Id_From_Name(const char* scene) {
+    if (scene == NULL) return IOT_AMBIENCE_SCENE_CUSTOM;
+    if (strcmp(scene, "night") == 0 || strcmp(scene, "夜间") == 0 || strcmp(scene, "夜间模式") == 0) {
+        return IOT_AMBIENCE_SCENE_NIGHT;
+    }
+    if (strcmp(scene, "hot") == 0 || strcmp(scene, "cool") == 0 || strcmp(scene, "闷热") == 0 || strcmp(scene, "降温") == 0) {
+        return IOT_AMBIENCE_SCENE_HOT;
+    }
+    if (strcmp(scene, "relax") == 0 || strcmp(scene, "休闲") == 0 || strcmp(scene, "放松") == 0) {
+        return IOT_AMBIENCE_SCENE_RELAX;
+    }
+    if (strcmp(scene, "party") == 0 || strcmp(scene, "聚会") == 0 || strcmp(scene, "节日") == 0) {
+        return IOT_AMBIENCE_SCENE_PARTY;
+    }
+    if (strcmp(scene, "rain") == 0 || strcmp(scene, "雨天") == 0) {
+        return IOT_AMBIENCE_SCENE_RAIN;
+    }
+    if (strcmp(scene, "safe") == 0 || strcmp(scene, "security") == 0 || strcmp(scene, "安全") == 0) {
+        return IOT_AMBIENCE_SCENE_SAFE;
+    }
+    return IOT_AMBIENCE_SCENE_CUSTOM;
+}
+
+static const char* Garden_Scene_Name_From_Id(uint8_t scene_id) {
+    switch (scene_id) {
+    case IOT_AMBIENCE_SCENE_NIGHT: return "night";
+    case IOT_AMBIENCE_SCENE_HOT: return "hot";
+    case IOT_AMBIENCE_SCENE_RELAX: return "relax";
+    case IOT_AMBIENCE_SCENE_PARTY: return "party";
+    case IOT_AMBIENCE_SCENE_RAIN: return "rain";
+    case IOT_AMBIENCE_SCENE_SAFE: return "safe";
+    case IOT_AMBIENCE_SCENE_CUSTOM:
+    default:
+        return "custom";
+    }
+}
+
 static void Garden_MQTT_Cmd_Callback(const char* topic, const char* data, int data_len) {
     ESP_LOGI(TAG, "MQTT garden cmd received: %.*s", data_len, data);
     App_Garden_Process_Mqtt_Cmd(data, data_len);
@@ -52,6 +109,18 @@ static void Garden_Update_Actual_By_Gpio(uint8_t gpio_index, uint8_t value, uint
 
     if (original_cmd == IOT_CMD_FIRE_RESET) {
         g_actual_state.fire_status = GARDEN_FIRE_NORMAL;
+        g_actual_state.safety_switch = GARDEN_SWITCH_ON;
+        return;
+    }
+
+    if (original_cmd == IOT_CMD_SET_STRIP_RGB || original_cmd == IOT_CMD_SET_AMBIENCE_SCENE) {
+        g_actual_state.strip_light = g_expected_state.strip_light;
+        g_actual_state.strip_red = g_expected_state.strip_red;
+        g_actual_state.strip_green = g_expected_state.strip_green;
+        g_actual_state.strip_blue = g_expected_state.strip_blue;
+        g_actual_state.strip_brightness = g_expected_state.strip_brightness;
+        g_actual_state.strip_effect = g_expected_state.strip_effect;
+        g_actual_state.ambience_scene = g_expected_state.ambience_scene;
         return;
     }
 
@@ -95,6 +164,7 @@ static void Garden_Sensor_Callback(const char* topic, const char* data, int data
             if (etype == 0) {
                 g_sensor_data.fire_status = GARDEN_FIRE_CONFIRMED;
                 g_actual_state.fire_status = GARDEN_FIRE_CONFIRMED;
+                g_actual_state.safety_switch = GARDEN_SWITCH_OFF;
             }
             cJSON_Delete(root);
         }
@@ -179,11 +249,17 @@ void App_Garden_Init(void) {
         .strip_light = GARDEN_SWITCH_OFF,
         .veg_light = GARDEN_SWITCH_OFF,
         .veg_pwm_duty = 0,
+        .strip_red = 255,
+        .strip_green = 180,
+        .strip_blue = 90,
+        .strip_brightness = 35,
+        .strip_effect = IOT_STRIP_EFFECT_SOLID,
+        .ambience_scene = IOT_AMBIENCE_SCENE_CUSTOM,
         .fan = GARDEN_SWITCH_OFF,
         .servo = GARDEN_SERVO_HANG,
         .water_pump = GARDEN_SWITCH_OFF,
         .atomizer = GARDEN_SWITCH_OFF,
-        .safety_switch = GARDEN_SWITCH_OFF,
+        .safety_switch = GARDEN_SWITCH_ON,
         .auto_mode = true,
         .fire_status = GARDEN_FIRE_NORMAL,
     };
@@ -221,6 +297,79 @@ void App_Garden_Set_Strip_Light(garden_switch_state_t state) {
     g_expected_state.strip_light = state;
     Send_IoT_Command(IOT_CMD_SET_LIGHT, 1, state == GARDEN_SWITCH_ON ? 1 : 0);
     ESP_LOGI(TAG, "Strip light: %s (MQTT->slave)", state ? "ON" : "OFF");
+}
+
+bool App_Garden_Set_Strip_RGB(uint8_t red, uint8_t green, uint8_t blue, uint8_t brightness, uint8_t effect) {
+    if (brightness > 100) {
+        brightness = 100;
+    }
+
+    g_expected_state.strip_light = brightness > 0 ? GARDEN_SWITCH_ON : GARDEN_SWITCH_OFF;
+    g_expected_state.strip_red = red;
+    g_expected_state.strip_green = green;
+    g_expected_state.strip_blue = blue;
+    g_expected_state.strip_brightness = brightness;
+    g_expected_state.strip_effect = effect;
+    g_expected_state.ambience_scene = IOT_AMBIENCE_SCENE_CUSTOM;
+
+    bool ok = Send_Strip_RGB_Command(red, green, blue, brightness, effect);
+    ESP_LOGI(TAG, "Strip RGB: r=%d g=%d b=%d brightness=%d effect=%d result=%d",
+             red, green, blue, brightness, effect, ok);
+    return ok;
+}
+
+bool App_Garden_Set_Ambience_Scene(const char* scene) {
+    uint8_t scene_id = Garden_Scene_Id_From_Name(scene);
+    uint8_t red = 255;
+    uint8_t green = 180;
+    uint8_t blue = 90;
+    uint8_t brightness = 35;
+    uint8_t effect = IOT_STRIP_EFFECT_SOLID;
+
+    switch (scene_id) {
+    case IOT_AMBIENCE_SCENE_NIGHT:
+        red = 255; green = 190; blue = 120; brightness = 28; effect = IOT_STRIP_EFFECT_SOLID;
+        App_Garden_Set_Fan(GARDEN_SWITCH_OFF);
+        App_Garden_Set_Atomizer(GARDEN_SWITCH_OFF);
+        break;
+    case IOT_AMBIENCE_SCENE_HOT:
+        red = 120; green = 190; blue = 255; brightness = 55; effect = IOT_STRIP_EFFECT_SOLID;
+        App_Garden_Set_Fan(GARDEN_SWITCH_ON);
+        App_Garden_Set_Atomizer(GARDEN_SWITCH_ON);
+        break;
+    case IOT_AMBIENCE_SCENE_RELAX:
+        red = 120; green = 220; blue = 150; brightness = 45; effect = IOT_STRIP_EFFECT_BREATHE;
+        break;
+    case IOT_AMBIENCE_SCENE_PARTY:
+        red = 255; green = 255; blue = 255; brightness = 65; effect = IOT_STRIP_EFFECT_RAINBOW;
+        break;
+    case IOT_AMBIENCE_SCENE_RAIN:
+        red = 80; green = 130; blue = 255; brightness = 35; effect = IOT_STRIP_EFFECT_BREATHE;
+        break;
+    case IOT_AMBIENCE_SCENE_SAFE:
+        red = 255; green = 255; blue = 255; brightness = 75; effect = IOT_STRIP_EFFECT_SOLID;
+        App_Garden_Set_Water_Pump(GARDEN_SWITCH_OFF);
+        App_Garden_Set_Atomizer(GARDEN_SWITCH_OFF);
+        App_Garden_Set_Safety_Switch(GARDEN_SWITCH_ON);
+        break;
+    case IOT_AMBIENCE_SCENE_CUSTOM:
+    default:
+        ESP_LOGW(TAG, "Unknown ambience scene: %s", scene ? scene : "null");
+        return false;
+    }
+
+    g_expected_state.strip_light = GARDEN_SWITCH_ON;
+    g_expected_state.strip_red = red;
+    g_expected_state.strip_green = green;
+    g_expected_state.strip_blue = blue;
+    g_expected_state.strip_brightness = brightness;
+    g_expected_state.strip_effect = effect;
+    g_expected_state.ambience_scene = scene_id;
+
+    bool ok = Send_Strip_RGB_Command(red, green, blue, brightness, effect);
+    Send_IoT_Command(IOT_CMD_SET_AMBIENCE_SCENE, 1, scene_id);
+    ESP_LOGI(TAG, "Ambience scene: %s (%d), result=%d", Garden_Scene_Name_From_Id(scene_id), scene_id, ok);
+    return ok;
 }
 
 void App_Garden_Set_Veg_Light(garden_switch_state_t state) {
@@ -262,7 +411,7 @@ void App_Garden_Set_Atomizer(garden_switch_state_t state) {
 void App_Garden_Set_Safety_Switch(garden_switch_state_t state) {
     g_expected_state.safety_switch = state;
     Send_IoT_Command(IOT_CMD_SET_RELAY, 3, state == GARDEN_SWITCH_ON ? 1 : 0);
-    ESP_LOGI(TAG, "Safety switch: %s (MQTT->slave)", state ? "TRIPPED" : "NORMAL");
+    ESP_LOGI(TAG, "Safety switch: %s (MQTT->slave)", state ? "NORMAL/POWER_ON" : "CUT_OFF");
 }
 
 void App_Garden_All_Lights_On(void) {
@@ -277,13 +426,53 @@ void App_Garden_All_Lights_Off(void) {
     App_Garden_Set_Veg_Light(GARDEN_SWITCH_OFF);
 }
 
+void App_Garden_All_Devices_On(void) {
+    App_Garden_Set_Safety_Switch(GARDEN_SWITCH_ON);
+    App_Garden_All_Lights_On();
+    App_Garden_Set_Fan(GARDEN_SWITCH_ON);
+    App_Garden_Set_Water_Pump(GARDEN_SWITCH_ON);
+    App_Garden_Set_Atomizer(GARDEN_SWITCH_ON);
+    App_Garden_Set_Servo(GARDEN_SERVO_HANG);
+    ESP_LOGI(TAG, "All garden devices ON, safety switch kept NORMAL");
+}
+
+void App_Garden_All_Devices_Off(void) {
+    App_Garden_All_Lights_Off();
+    App_Garden_Set_Fan(GARDEN_SWITCH_OFF);
+    App_Garden_Set_Water_Pump(GARDEN_SWITCH_OFF);
+    App_Garden_Set_Atomizer(GARDEN_SWITCH_OFF);
+    App_Garden_Set_Servo(GARDEN_SERVO_COLLECT);
+    App_Garden_Set_Safety_Switch(GARDEN_SWITCH_ON);
+    ESP_LOGI(TAG, "All garden user devices OFF, safety switch kept NORMAL");
+}
+
 void App_Garden_Fire_Emergency_Response(void) {
-    ESP_LOGW(TAG, "=== FIRE EMERGENCY RESPONSE (MQTT broadcast) ===");
+    ESP_LOGW(TAG, "=== FIRE EMERGENCY RESPONSE (MASTER + MQTT) ===");
     g_expected_state.fire_status = GARDEN_FIRE_CONFIRMED;
+    g_expected_state.safety_switch = GARDEN_SWITCH_OFF;
+    g_expected_state.water_pump = GARDEN_SWITCH_OFF;
+    g_expected_state.atomizer = GARDEN_SWITCH_OFF;
+    g_expected_state.corridor_light = GARDEN_SWITCH_ON;
+    g_expected_state.strip_light = GARDEN_SWITCH_ON;
+    g_expected_state.veg_light = GARDEN_SWITCH_ON;
+    g_expected_state.strip_red = 255;
+    g_expected_state.strip_green = 0;
+    g_expected_state.strip_blue = 0;
+    g_expected_state.strip_brightness = 100;
+    g_expected_state.strip_effect = IOT_STRIP_EFFECT_ALERT;
+    g_expected_state.ambience_scene = IOT_AMBIENCE_SCENE_SAFE;
+
+    App_Garden_Set_Safety_Switch(GARDEN_SWITCH_OFF);
+    App_Garden_Set_Water_Pump(GARDEN_SWITCH_OFF);
+    App_Garden_Set_Atomizer(GARDEN_SWITCH_OFF);
+    App_Garden_All_Lights_On();
+    App_Garden_Set_Strip_RGB(255, 0, 0, 100, IOT_STRIP_EFFECT_ALERT);
+    g_expected_state.ambience_scene = IOT_AMBIENCE_SCENE_SAFE;
 
     App_IOT_Scenario_Emergency();
+    App_IOT_Emergency_Alert("fire", "Fire emergency triggered by garden master");
 
-    ESP_LOGW(TAG, "Fire emergency: EMERGENCY broadcast sent to all slaves");
+    ESP_LOGW(TAG, "Fire emergency: safety CUT_OFF, pump/atomizer OFF, lights ON, local alert dispatched");
 }
 
 void App_Garden_Get_Status_Json(char* buffer, int buffer_size) {
@@ -291,16 +480,24 @@ void App_Garden_Get_Status_Json(char* buffer, int buffer_size) {
     snprintf(buffer, buffer_size,
         "{\"online\":%s,"
         "\"expected\":{\"corridor_light\":%d,\"strip_light\":%d,\"veg_light\":%d,"
-        "\"veg_pwm_duty\":%d,\"fan\":%d,\"servo\":%d,\"auto_mode\":%s,"
+        "\"veg_pwm_duty\":%d,\"strip_rgb\":[%d,%d,%d],\"strip_brightness\":%d,"
+        "\"strip_effect\":%d,\"ambience_scene\":\"%s\",\"fan\":%d,\"servo\":%d,\"auto_mode\":%s,"
         "\"water_pump\":%d,\"atomizer\":%d,\"safety_switch\":%d,\"fire_status\":%d},"
         "\"actual\":{\"corridor_light\":%d,\"strip_light\":%d,\"veg_light\":%d,"
-        "\"veg_pwm_duty\":%d,\"fan\":%d,\"servo\":%d,\"auto_mode\":%s,"
+        "\"veg_pwm_duty\":%d,\"strip_rgb\":[%d,%d,%d],\"strip_brightness\":%d,"
+        "\"strip_effect\":%d,\"ambience_scene\":\"%s\",\"fan\":%d,\"servo\":%d,\"auto_mode\":%s,"
         "\"water_pump\":%d,\"atomizer\":%d,\"safety_switch\":%d,\"fire_status\":%d}}",
         g_garden_online ? "true" : "false",
         g_expected_state.corridor_light,
         g_expected_state.strip_light,
         g_expected_state.veg_light,
         g_expected_state.veg_pwm_duty,
+        g_expected_state.strip_red,
+        g_expected_state.strip_green,
+        g_expected_state.strip_blue,
+        g_expected_state.strip_brightness,
+        g_expected_state.strip_effect,
+        Garden_Scene_Name_From_Id(g_expected_state.ambience_scene),
         g_expected_state.fan,
         g_expected_state.servo,
         g_expected_state.auto_mode ? "true" : "false",
@@ -312,6 +509,12 @@ void App_Garden_Get_Status_Json(char* buffer, int buffer_size) {
         g_actual_state.strip_light,
         g_actual_state.veg_light,
         g_actual_state.veg_pwm_duty,
+        g_actual_state.strip_red,
+        g_actual_state.strip_green,
+        g_actual_state.strip_blue,
+        g_actual_state.strip_brightness,
+        g_actual_state.strip_effect,
+        Garden_Scene_Name_From_Id(g_actual_state.ambience_scene),
         g_actual_state.fan,
         g_actual_state.servo,
         g_actual_state.auto_mode ? "true" : "false",
@@ -359,6 +562,18 @@ bool App_Garden_Process_Mqtt_Cmd(const char* json_cmd, int cmd_len) {
         } else if (strcmp(dev_name, "strip_light") == 0) {
             if (strcmp(act, "on") == 0) { App_Garden_Set_Strip_Light(GARDEN_SWITCH_ON); success = true; }
             else if (strcmp(act, "off") == 0) { App_Garden_Set_Strip_Light(GARDEN_SWITCH_OFF); success = true; }
+            else if (strcmp(act, "rgb") == 0 && cJSON_IsObject(value)) {
+                cJSON* r = cJSON_GetObjectItem(value, "red");
+                cJSON* g = cJSON_GetObjectItem(value, "green");
+                cJSON* b = cJSON_GetObjectItem(value, "blue");
+                cJSON* br = cJSON_GetObjectItem(value, "brightness");
+                cJSON* effect = cJSON_GetObjectItem(value, "effect");
+                if (cJSON_IsNumber(r) && cJSON_IsNumber(g) && cJSON_IsNumber(b)) {
+                    uint8_t brightness = cJSON_IsNumber(br) ? (uint8_t)br->valueint : 50;
+                    uint8_t fx = cJSON_IsNumber(effect) ? (uint8_t)effect->valueint : IOT_STRIP_EFFECT_SOLID;
+                    success = App_Garden_Set_Strip_RGB((uint8_t)r->valueint, (uint8_t)g->valueint, (uint8_t)b->valueint, brightness, fx);
+                }
+            }
         } else if (strcmp(dev_name, "veg_light") == 0 || strcmp(dev_name, "corridor_long_light") == 0) {
             if (strcmp(act, "on") == 0) { App_Garden_Set_Veg_Light(GARDEN_SWITCH_ON); success = true; }
             else if (strcmp(act, "off") == 0) { App_Garden_Set_Veg_Light(GARDEN_SWITCH_OFF); success = true; }
@@ -375,8 +590,13 @@ bool App_Garden_Process_Mqtt_Cmd(const char* json_cmd, int cmd_len) {
             if (strcmp(act, "on") == 0) { App_Garden_Set_Atomizer(GARDEN_SWITCH_ON); success = true; }
             else if (strcmp(act, "off") == 0) { App_Garden_Set_Atomizer(GARDEN_SWITCH_OFF); success = true; }
         } else if (strcmp(dev_name, "safety_switch") == 0) {
-            if (strcmp(act, "on") == 0) { App_Garden_Set_Safety_Switch(GARDEN_SWITCH_ON); success = true; }
-            else if (strcmp(act, "off") == 0) { App_Garden_Set_Safety_Switch(GARDEN_SWITCH_OFF); success = true; }
+            if (strcmp(act, "on") == 0 || strcmp(act, "normal") == 0 || strcmp(act, "connect") == 0) {
+                App_Garden_Set_Safety_Switch(GARDEN_SWITCH_ON);
+                success = true;
+            } else if (strcmp(act, "off") == 0 || strcmp(act, "cut_off") == 0 || strcmp(act, "trip") == 0) {
+                App_Garden_Set_Safety_Switch(GARDEN_SWITCH_OFF);
+                success = true;
+            }
         } else if (strcmp(dev_name, "auto_mode") == 0) {
             if (value != NULL) {
                 App_Garden_Set_Auto_Mode(cJSON_IsTrue(value));
@@ -385,6 +605,13 @@ bool App_Garden_Process_Mqtt_Cmd(const char* json_cmd, int cmd_len) {
         } else if (strcmp(dev_name, "all_lights") == 0) {
             if (strcmp(act, "on") == 0) { App_Garden_All_Lights_On(); success = true; }
             else if (strcmp(act, "off") == 0) { App_Garden_All_Lights_Off(); success = true; }
+        } else if (strcmp(dev_name, "all_devices") == 0) {
+            if (strcmp(act, "on") == 0) { App_Garden_All_Devices_On(); success = true; }
+            else if (strcmp(act, "off") == 0) { App_Garden_All_Devices_Off(); success = true; }
+        } else if (strcmp(dev_name, "ambience") == 0 || strcmp(dev_name, "ambience_scene") == 0) {
+            if (strcmp(act, "scene") == 0 && cJSON_IsString(value)) {
+                success = App_Garden_Set_Ambience_Scene(value->valuestring);
+            }
         } else if (strcmp(dev_name, "emergency") == 0) {
             if (strcmp(act, "fire") == 0) { App_Garden_Fire_Emergency_Response(); success = true; }
         }

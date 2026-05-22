@@ -158,6 +158,28 @@
 | 全开 | `Iot_Mcp_Broadcast_All_On()` | "打开所有设备" |
 | 全关 | `Iot_Mcp_Broadcast_All_Off()` | "关闭所有设备" |
 
+### 4.5 智慧庭院氛围灯
+
+| AI 意图 | MCP 工具 | 示例话术 |
+|---------|----------|----------|
+| 通用设备控制 | `self.garden.control(target, action)` | "打开雾化器"、"切断安防总闸"、"收回晾衣架" |
+| 一键灯光/设备 | `self.garden.all(scope, action)` | "打开所有灯"、"关闭所有设备" |
+| 精确调色 | `self.garden.set_strip_rgb(red, green, blue, brightness, effect)` | "把庭院灯带调成浅蓝色，亮度 50%" |
+| 夜间模式 | `self.garden.set_ambience_scene("night")` | "进入夜间模式" |
+| 闷热降温 | `self.garden.set_ambience_scene("hot")` | "我有点闷热，帮我调节一下" |
+| 休闲氛围 | `self.garden.set_ambience_scene("relax")` | "来点放松的庭院氛围" |
+| 聚会氛围 | `self.garden.set_ambience_scene("party")` | "打开聚会模式" |
+| 雨天氛围 | `self.garden.set_ambience_scene("rain")` | "切到雨天氛围" |
+| 安全照明 | `self.garden.set_ambience_scene("safe")` | "打开安全照明" |
+| 火灾应急 | `self.garden.emergency()` | "触发火灾应急" |
+| 解除火灾 | `self.garden.fire_reset()` | "火灾解除了，恢复正常" |
+
+WS2812B 灯带接在庭院从机 GPIO12，使用 MQTT `IOT_CMD_SET_STRIP_RGB(0x39)` 控制 RGB/亮度/效果，原 `strip_light` 开关语义继续保留。
+
+安防总闸硬件语义：GPIO17 高电平表示继电器导通、庭院负载正常供电；GPIO17 低电平表示火灾熔断、切断庭院负载。上电默认应为高电平，只有火灾或明确切断总闸时才拉低。
+
+为降低大模型选错工具的概率，默认关闭底层 `self.iot.*` 与过细的 `self.garden.set_fan/set_water_pump/set_atomizer/set_safety_switch` 等工具，统一使用 `self.garden.control` 做常规执行器控制。需要重新打开底层工具时，可在编译参数里设置 `ENABLE_LEGACY_IOT_MCP_TOOLS=1` 或 `ENABLE_GARDEN_FINE_GRAINED_MCP_TOOLS=1`。
+
 ---
 
 ## 五、ESP-NOW 协议格式
@@ -193,6 +215,8 @@ typedef struct {
 | 0x31 | `IOT_CMD_BROADCAST_ALL_ON` | 广播全开 |
 | 0x32 | `IOT_CMD_BROADCAST_LIGHTS_OFF` | 广播关灯 |
 | 0x33 | `IOT_CMD_BROADCAST_LIGHTS_ON` | 广播开灯 |
+| 0x39 | `IOT_CMD_SET_STRIP_RGB` | 设置 WS2812B 灯带 RGB/亮度/效果 |
+| 0x3A | `IOT_CMD_SET_AMBIENCE_SCENE` | 设置庭院氛围场景 |
 
 ---
 

@@ -33,7 +33,9 @@
 
 #define TAG "CustomEsp32s3Cam"
 
-static TaskHandle_t s_sensor_alert_task_handle = nullptr;
+#ifndef ENABLE_LEGACY_IOT_MCP_TOOLS
+#define ENABLE_LEGACY_IOT_MCP_TOOLS 0
+#endif
 
 struct SensorAlertScenario {
     const char* type;
@@ -44,6 +46,9 @@ struct SensorAlertScenario {
     int beep_ms;
     int gap_ms;
 };
+
+static TaskHandle_t s_sensor_alert_task_handle = nullptr;
+static const SensorAlertScenario* s_active_sensor_alert = nullptr;
 
 static const SensorAlertScenario kSensorAlertScenarios[] = {
     {
@@ -110,14 +115,13 @@ static void SensorAlertTask(void* arg) {
 #endif
     });
 
-    vTaskDelay(pdMS_TO_TICKS(1500));
-
     for (int i = 0; i < scenario->beep_count; i++) {
         App_Buzzer_Beep(scenario->beep_ms);
         vTaskDelay(pdMS_TO_TICKS(scenario->gap_ms));
     }
 
     s_sensor_alert_task_handle = nullptr;
+    s_active_sensor_alert = nullptr;
     vTaskDelete(nullptr);
 }
 
@@ -130,8 +134,17 @@ static void DispatchSensorAlert(const char* type, const char* detail) {
     }
 
     if (s_sensor_alert_task_handle != nullptr) {
+        if (strcmp(scenario->type, "fire") == 0 &&
+            (s_active_sensor_alert == nullptr || strcmp(s_active_sensor_alert->type, "fire") != 0)) {
+            ESP_LOGW(TAG, "Fire alert preempts active sensor alert");
+            vTaskDelete(s_sensor_alert_task_handle);
+            App_Buzzer_Off();
+            s_sensor_alert_task_handle = nullptr;
+            s_active_sensor_alert = nullptr;
+        } else {
         ESP_LOGW(TAG, "Sensor alert already running, skip duplicate type=%s", type);
         return;
+        }
     }
 
     BaseType_t ret = xTaskCreate(SensorAlertTask, "sensor_alert", 3072,
@@ -139,8 +152,11 @@ static void DispatchSensorAlert(const char* type, const char* detail) {
                                  &s_sensor_alert_task_handle);
     if (ret != pdPASS) {
         s_sensor_alert_task_handle = nullptr;
+        s_active_sensor_alert = nullptr;
         ESP_LOGE(TAG, "Failed to create sensor alert task, free_heap=%lu",
                  (unsigned long)esp_get_free_heap_size());
+    } else {
+        s_active_sensor_alert = scenario;
     }
 }
 
@@ -357,6 +373,7 @@ public:
     void InitializeTools() {
         auto& mcp_server = McpServer::GetInstance();
 
+#if ENABLE_LEGACY_IOT_MCP_TOOLS
         mcp_server.AddTool("self.iot.set_gpio",
             "控制远程 IoT 从机设备的 GPIO 输出。\n"
             "通过 MQTT 协议向指定从机发送 GPIO 控制指令。\n"
@@ -672,6 +689,7 @@ public:
 
                 return json;
             });
+#endif
 
         mcp_server.AddTool("self.alarm.add_timer",
             "设置定时器提醒（X分钟后提醒）。Args: minutes(分钟数), message(提醒内容)。",

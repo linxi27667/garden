@@ -76,6 +76,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hira
 .quick-btn:active{transform:scale(0.97)}
 .quick-btn.on{border-color:var(--green);background:var(--green-light);color:var(--green-dark)}
 .quick-btn.off{border-color:var(--red);background:var(--red-light);color:var(--red)}
+.ambience-panel{margin-top:16px}
+.ambience-controls{display:grid;grid-template-columns:110px 1fr 140px 120px;gap:12px;align-items:end}
+.color-input{width:100%;height:42px;border:1px solid var(--gray);border-radius:10px;background:var(--card);padding:4px;cursor:pointer}
+.select{width:100%;height:42px;border:1px solid var(--gray);border-radius:10px;background:var(--card);padding:0 10px;font-family:inherit;color:var(--text)}
+.scene-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-top:12px}
+.scene-btn{padding:10px;border:1px solid var(--gray);border-radius:10px;background:var(--card);font-size:13px;font-weight:600;color:var(--text);cursor:pointer;transition:var(--transition);font-family:inherit}
+.scene-btn:hover{border-color:var(--blue);color:var(--blue)}
 .auto-card{display:flex;align-items:center;justify-content:space-between;padding:20px 24px}
 .auto-info{display:flex;align-items:center;gap:12px}
 .auto-icon{font-size:24px}
@@ -96,6 +103,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hira
   .sensor-value{font-size:28px}
   .config-bar{padding:10px 16px;gap:8px}
   .config-bar input{width:180px}
+  .ambience-controls{grid-template-columns:1fr}
+  .scene-grid{grid-template-columns:repeat(2,1fr)}
 }
 @media(max-width:480px){
   .cards{grid-template-columns:1fr}
@@ -165,6 +174,38 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hira
     </div>
   </div>
 
+  <div class="section-title">氛围灯带</div>
+  <div class="card ambience-panel">
+    <div class="ambience-controls">
+      <div>
+        <div class="slider-label"><span>颜色</span></div>
+        <input type="color" class="color-input" id="strip_color" value="#ffb45a">
+      </div>
+      <div>
+        <div class="slider-label"><span>亮度</span><span id="strip_brightness_label">35%</span></div>
+        <input type="range" class="slider" id="strip_brightness" min="0" max="100" value="35" oninput="document.getElementById('strip_brightness_label').textContent=this.value+'%'">
+      </div>
+      <div>
+        <div class="slider-label"><span>效果</span></div>
+        <select class="select" id="strip_effect">
+          <option value="0">常亮</option>
+          <option value="1">呼吸</option>
+          <option value="2">彩虹</option>
+          <option value="3">警示闪烁</option>
+        </select>
+      </div>
+      <button class="quick-btn on" onclick="sendStripRgb()">应用</button>
+    </div>
+    <div class="scene-grid">
+      <button class="scene-btn" onclick="sendScene('night')">夜间</button>
+      <button class="scene-btn" onclick="sendScene('hot')">闷热</button>
+      <button class="scene-btn" onclick="sendScene('relax')">休闲</button>
+      <button class="scene-btn" onclick="sendScene('party')">聚会</button>
+      <button class="scene-btn" onclick="sendScene('rain')">雨天</button>
+      <button class="scene-btn" onclick="sendScene('safe')">安全</button>
+    </div>
+  </div>
+
   <div class="section-title">设备控制</div>
   <div class="cards">
     <div class="card">
@@ -212,6 +253,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hira
   <div class="quick-actions">
     <button class="quick-btn on" onclick="sendCmd('all_lights','on')">🌙 全部开灯</button>
     <button class="quick-btn off" onclick="sendCmd('all_lights','off')">☀️ 全部关灯</button>
+    <button class="quick-btn on" onclick="sendCmd('all_devices','on')">⚡ 全部设备开</button>
+    <button class="quick-btn off" onclick="sendCmd('all_devices','off')">⏻ 全部设备关</button>
   </div>
 
   <div class="section-title">环境监测</div>
@@ -313,28 +356,58 @@ function sendCmd(device, action, value) {
   client.publish('xiaozhi/garden/cmd', JSON.stringify(cmd));
 }
 
+function sendStripRgb() {
+  var color = document.getElementById('strip_color').value.replace('#', '');
+  var red = parseInt(color.slice(0, 2), 16);
+  var green = parseInt(color.slice(2, 4), 16);
+  var blue = parseInt(color.slice(4, 6), 16);
+  var brightness = parseInt(document.getElementById('strip_brightness').value, 10);
+  var effect = parseInt(document.getElementById('strip_effect').value, 10);
+  sendCmd('strip_light', 'rgb', {red: red, green: green, blue: blue, brightness: brightness, effect: effect});
+}
+
+function sendScene(scene) {
+  sendCmd('ambience', 'scene', scene);
+}
+
 function handleStatus(data) {
-  setToggle('corridor_light', data.corridor_light === 1);
-  document.getElementById('corridor_status').textContent = data.corridor_light ? '已开启' : '已关闭';
+  var state = data.actual || data;
 
-  setToggle('strip_light', data.strip_light === 1);
-  document.getElementById('strip_status').textContent = data.strip_light ? '已开启' : '已关闭';
+  setToggle('corridor_light', state.corridor_light === 1);
+  document.getElementById('corridor_status').textContent = state.corridor_light ? '已开启' : '已关闭';
 
-  setToggle('veg_light', data.veg_light === 1);
-  document.getElementById('veg_status').textContent = data.veg_light ? '已开启' : '已关闭';
+  setToggle('strip_light', state.strip_light === 1);
+  document.getElementById('strip_status').textContent = state.strip_light ? '已开启' : '已关闭';
+
+  if (Array.isArray(state.strip_rgb)) {
+    var hex = '#' + state.strip_rgb.map(function(v) {
+      return Math.max(0, Math.min(255, v || 0)).toString(16).padStart(2, '0');
+    }).join('');
+    document.getElementById('strip_color').value = hex;
+  }
+  if (typeof state.strip_brightness === 'number') {
+    document.getElementById('strip_brightness').value = state.strip_brightness;
+    document.getElementById('strip_brightness_label').textContent = state.strip_brightness + '%';
+  }
+  if (typeof state.strip_effect === 'number') {
+    document.getElementById('strip_effect').value = String(state.strip_effect);
+  }
+
+  setToggle('veg_light', state.veg_light === 1);
+  document.getElementById('veg_status').textContent = state.veg_light ? '已开启' : '已关闭';
 
   var vegSlider = document.getElementById('veg_duty');
   var vegLabel = document.getElementById('veg_duty_label');
-  vegSlider.disabled = data.veg_light !== 1;
-  vegSlider.value = data.veg_pwm_duty || 0;
-  vegLabel.textContent = (data.veg_pwm_duty || 0) + '%';
+  vegSlider.disabled = state.veg_light !== 1;
+  vegSlider.value = state.veg_pwm_duty || 0;
+  vegLabel.textContent = (state.veg_pwm_duty || 0) + '%';
 
-  setToggle('fan', data.fan === 1);
-  document.getElementById('fan_status').textContent = data.fan ? '已开启' : '已关闭';
+  setToggle('fan', state.fan === 1);
+  document.getElementById('fan_status').textContent = state.fan ? '已开启' : '已关闭';
 
   var servoHang = document.getElementById('servo_hang');
   var servoCollect = document.getElementById('servo_collect');
-  if (data.servo === 1) {
+  if (state.servo === 1) {
     servoHang.classList.add('active');
     servoCollect.classList.remove('active');
     document.getElementById('servo_status').textContent = '已晾出';
@@ -344,7 +417,7 @@ function handleStatus(data) {
     document.getElementById('servo_status').textContent = '已收回';
   }
 
-  setToggle('auto_mode', data.auto_mode === true);
+  setToggle('auto_mode', state.auto_mode === true);
 }
 
 function handleSensors(data) {

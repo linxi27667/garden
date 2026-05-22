@@ -1,6 +1,8 @@
 #include "iot_control_task.h"
 #include "mqtt_receive.h"
 #include "app_asr_uart.h"
+#include "app_ws2812_strip.h"
+#include "mqtt_iot_protocol.h"
 
 #include "esp_log.h"
 #include "driver/gpio.h"
@@ -87,6 +89,7 @@ static void HW_Servo_Set_Angle(ledc_channel_t channel, int16_t angle) {
 #define DHT_PIN              GPIO_NUM_38
 
 #define REFRESH_INTERVAL_MS  100
+#define LIGHT_STRIP_INDEX    1
 
 static gpio_num_t g_light_gpios[LIGHT_COUNT] = {
     LIGHT_CORRIDOR_GPIO, LIGHT_STRIP_GPIO, LIGHT_VEG_GPIO
@@ -100,10 +103,16 @@ static gpio_num_t g_servo_gpios[SERVO_COUNT] = {SERVO_CLOTHES_GPIO};
 
 volatile device_flags_enum_t g_device_flags = {
     .light = {SWITCH_OFF, SWITCH_OFF, SWITCH_OFF},
-    .relay = {SWITCH_OFF, SWITCH_OFF, SWITCH_OFF, SWITCH_OFF},
+    .relay = {SWITCH_OFF, SWITCH_OFF, SWITCH_OFF, SWITCH_ON},
     .servo = {SERVO_MIN_ANGLE},
     .fire_status = FIRE_NORMAL,
-    .auto_mode = true
+    .auto_mode = true,
+    .strip_red = 255,
+    .strip_green = 180,
+    .strip_blue = 90,
+    .strip_brightness = 35,
+    .strip_effect = IOT_STRIP_EFFECT_SOLID,
+    .ambience_scene = IOT_AMBIENCE_SCENE_CUSTOM
 };
 
 SemaphoreHandle_t g_device_flags_mutex = NULL;
@@ -180,12 +189,18 @@ void Iot_Fire_Emergency_Response(void) {
     DEVICE_FLAGS_LOCK();
     first_fire_report = (g_device_flags.fire_status != FIRE_CONFIRMED);
     g_device_flags.fire_status = FIRE_CONFIRMED;
-    g_device_flags.relay[3] = SWITCH_ON;
+    g_device_flags.relay[3] = SWITCH_OFF;
     g_device_flags.relay[1] = SWITCH_OFF;
     g_device_flags.relay[2] = SWITCH_OFF;
     for (int i = 0; i < LIGHT_COUNT; i++) {
         g_device_flags.light[i] = SWITCH_ON;
     }
+    g_device_flags.strip_red = 255;
+    g_device_flags.strip_green = 0;
+    g_device_flags.strip_blue = 0;
+    g_device_flags.strip_brightness = 100;
+    g_device_flags.strip_effect = IOT_STRIP_EFFECT_ALERT;
+    g_device_flags.ambience_scene = IOT_AMBIENCE_SCENE_SAFE;
     DEVICE_FLAGS_UNLOCK();
 
     if (first_fire_report) {
@@ -195,7 +210,7 @@ void Iot_Fire_Emergency_Response(void) {
         ESP_LOGW(TAG, "Fire already confirmed, local outputs refreshed without duplicate report");
     }
 
-    ESP_LOGW(TAG, "Fire emergency: safety switch TRIPPED, pump/atomizer OFF, all lights ON");
+    ESP_LOGW(TAG, "Fire emergency: safety switch CUT OFF, pump/atomizer OFF, all lights ON");
 }
 
 void Iot_Help_Emergency_Response(void) {
@@ -205,6 +220,11 @@ void Iot_Help_Emergency_Response(void) {
     for (int i = 0; i < LIGHT_COUNT; i++) {
         g_device_flags.light[i] = SWITCH_ON;
     }
+    g_device_flags.strip_red = 255;
+    g_device_flags.strip_green = 80;
+    g_device_flags.strip_blue = 40;
+    g_device_flags.strip_brightness = 100;
+    g_device_flags.strip_effect = IOT_STRIP_EFFECT_ALERT;
     DEVICE_FLAGS_UNLOCK();
 
     MQTT_Publish_Emergency(EMERGENCY_HELP, "Help button pressed");
@@ -226,6 +246,11 @@ static void Device_Refresh_Task(void* arg) {
     ESP_LOGI(TAG, "Device refresh task started");
 
     for (int i = 0; i < LIGHT_COUNT; i++) {
+        if (i == LIGHT_STRIP_INDEX) {
+            App_WS2812_Strip_Init(LIGHT_STRIP_GPIO, WS2812_STRIP_LED_COUNT);
+            ESP_LOGI(TAG, "Light[%d] -> GPIO%d (WS2812B strip)", i, g_light_gpios[i]);
+            continue;
+        }
         HW_Gpio_Init(g_light_gpios[i]);
         gpio_set_level(g_light_gpios[i], 0);
         ESP_LOGI(TAG, "Light[%d] -> GPIO%d", i, g_light_gpios[i]);
@@ -233,7 +258,7 @@ static void Device_Refresh_Task(void* arg) {
 
     for (int i = 0; i < RELAY_COUNT; i++) {
         HW_Gpio_Init(g_relay_gpios[i]);
-        gpio_set_level(g_relay_gpios[i], 0);
+        gpio_set_level(g_relay_gpios[i], i == 3 ? 1 : 0);
         ESP_LOGI(TAG, "Relay[%d] -> GPIO%d (%s)", i, g_relay_gpios[i],
                  i == 0 ? "风扇" : i == 1 ? "水泵" : i == 2 ? "雾化器" : "安防总闸");
     }
@@ -247,17 +272,30 @@ static void Device_Refresh_Task(void* arg) {
     Init_Interrupt_Pins();
 
     while (1) {
+        device_flags_enum_t flags_snapshot;
+
         DEVICE_FLAGS_LOCK();
+        flags_snapshot = g_device_flags;
+        DEVICE_FLAGS_UNLOCK();
+
         for (int i = 0; i < LIGHT_COUNT; i++) {
-            HW_Gpio_Write(g_light_gpios[i], g_device_flags.light[i]);
+            if (i == LIGHT_STRIP_INDEX) {
+                App_WS2812_Strip_Apply(flags_snapshot.light[i] == SWITCH_ON,
+                                       flags_snapshot.strip_red,
+                                       flags_snapshot.strip_green,
+                                       flags_snapshot.strip_blue,
+                                       flags_snapshot.strip_brightness,
+                                       flags_snapshot.strip_effect);
+            } else {
+                HW_Gpio_Write(g_light_gpios[i], flags_snapshot.light[i]);
+            }
         }
         for (int i = 0; i < RELAY_COUNT; i++) {
-            HW_Gpio_Write(g_relay_gpios[i], g_device_flags.relay[i]);
+            HW_Gpio_Write(g_relay_gpios[i], flags_snapshot.relay[i]);
         }
         for (int i = 0; i < SERVO_COUNT; i++) {
-            HW_Servo_Set_Angle(g_servo_channels[i], g_device_flags.servo[i]);
+            HW_Servo_Set_Angle(g_servo_channels[i], flags_snapshot.servo[i]);
         }
-        DEVICE_FLAGS_UNLOCK();
 
         uint32_t notified_bits = 0;
         xTaskNotifyWait(0, NOTIFY_FIRE_BIT | NOTIFY_HELP_BIT | NOTIFY_RAIN_BIT, &notified_bits, 0);

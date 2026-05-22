@@ -17,6 +17,8 @@ garden_sensor_data_t App_Garden_Get_Sensors(void);
 
 void App_Garden_Set_Corridor_Light(garden_switch_state_t state);
 void App_Garden_Set_Strip_Light(garden_switch_state_t state);
+bool App_Garden_Set_Strip_RGB(uint8_t red, uint8_t green, uint8_t blue, uint8_t brightness, uint8_t effect);
+bool App_Garden_Set_Ambience_Scene(const char* scene);
 void App_Garden_Set_Veg_Light(garden_switch_state_t state);
 void App_Garden_Set_Fan(garden_switch_state_t state);
 void App_Garden_Set_Servo(garden_servo_state_t state);
@@ -28,6 +30,8 @@ void App_Garden_Set_Safety_Switch(garden_switch_state_t state);
 
 void App_Garden_All_Lights_On(void);
 void App_Garden_All_Lights_Off(void);
+void App_Garden_All_Devices_On(void);
+void App_Garden_All_Devices_Off(void);
 
 void App_Garden_Fire_Emergency_Response(void);
 

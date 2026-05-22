@@ -98,6 +98,7 @@ web/
 | MPU6050 软件 I2C | SDA=GPIO3, SCL=GPIO46 | 姿态检测 |
 | 蜂鸣器 | GPIO14 | `BUZZER_ACTIVE_LEVEL=0` |
 | 内置 LED | GPIO48 | 状态指示 |
+| 调试日志 UART0 | TX=GPIO43, RX=GPIO44 | 主控制台日志；USB Serial/JTAG 为辅助日志 |
 
 主机只保留自身音频、显示、蜂鸣器和姿态传感器，不接庭院负载。
 
@@ -110,12 +111,12 @@ web/
 | 土壤湿度 | `soil_mv` | **GPIO1** | ADC1_CH0 | 模拟输入 | 土壤湿度传感器 AO 输出 |
 | 雨滴检测 | `rain_adc_mv` | **GPIO4** | ADC1_CH3 | 模拟输入 | 雨滴传感器 AO 输出，**物理隔离** |
 | 西庭灯 | `courtyard_west_light` | **GPIO11** | — | 数字输出 | 灯光控制 |
-| 庭院灯带 | `strip_light` | **GPIO12** | — | 数字输出 | 灯光控制 |
+| 庭院灯带 | `strip_light` | **GPIO12** | — | RMT/WS2812B | 30 颗 GRB 氛围灯带 |
 | 长廊灯 | `corridor_long_light` | **GPIO13** | — | 数字输出 | 灯光控制 |
 | 风扇 | `fan` | **GPIO14** | — | 继电器 CH0 | 风扇控制 |
 | 水泵 | `water_pump` | **GPIO15** | — | 继电器 CH1 | 水泵控制 |
 | 雾化器 | `atomizer` | **GPIO16** | — | 继电器 CH2 | 雾化器控制 |
-| 安防总闸 | `safety_switch` | **GPIO17** | — | 继电器 CH3 | 建议接 NC 常闭 |
+| 安防总闸 | `safety_switch` | **GPIO17** | — | 继电器 CH3 | 高电平导通供电，低电平火灾切断 |
 | 晾衣架 | `servo` | **GPIO18** | — | LEDC PWM | 50Hz 舵机信号 |
 | DHT11 | `temperature` / `humidity` | **GPIO38** | — | 单总线 | 温湿度采集 |
 | 火焰传感器 | `fire_status` | **GPIO2** | — | ⚠️ 下降沿中断，复用原光照引脚 |
@@ -181,6 +182,23 @@ ADC1_CH4~CH9 (GPIO5~GPIO10) ─── [预留，未使用]
 - 数字输入/传感器：GPIO2(火焰中断)、GPIO38(DHT11)、GPIO48(求助中断)
 - UART：GPIO43（安全 GPIO，UART0 默认 TX 脚）
 - 完全避开 Strapping 引脚及 USB/JTAG 冲突区
+
+#### WS2812B 庭院氛围灯带接线
+
+GPIO12 现在作为 WS2812B 数据输出使用，协议由 ESP-IDF `led_strip` 组件通过 RMT 外设驱动。
+
+```text
+ESP32-S3 从机 GPIO12 ── 330Ω~470Ω ── 电平转换 ── WS2812B DIN
+ESP32-S3 GND ───────────────────────── WS2812B GND
+外部 5V 电源 + ─────────────────────── WS2812B 5V
+外部 5V 电源 - ─────────────────────── ESP32-S3 GND
+```
+
+硬件注意：
+
+- WS2812B 使用 5V 供电，ESP32-S3 数据电平为 3.3V，建议用 74AHCT125、74HCT245 或 SN74LV1T34 做 3.3V 到 5V 电平转换。
+- 数据线串联 330Ω~470Ω 电阻，灯带 5V 与 GND 入口并联 1000µF 电容。
+- 默认按 30 颗灯珠实现，满白峰值约 1.8A，软件默认场景亮度低于 75%，长灯带需独立供电并分段注入电源。
 
 ## 设备命名规范
 
@@ -259,6 +277,10 @@ typedef struct {
 | `IOT_CMD_EMERGENCY` | `0x34` | 火灾紧急联动 |
 | `IOT_CMD_SET_AUTO_MODE` | `0x35` | 自动模式开关 |
 | `IOT_CMD_FIRE_RESET` | `0x36` | 火灾状态复位 |
+| `IOT_CMD_SET_STRIP_RGB` | `0x39` | 设置 WS2812B 颜色/亮度/效果 |
+| `IOT_CMD_SET_AMBIENCE_SCENE` | `0x3A` | 设置庭院氛围场景 |
+
+WS2812B RGB 命令复用 8 字节包：`gpio_index=1` 表示庭院灯带，`value=brightness(0-100)`，`reserved[0..2]=red/green/blue`，`reserved[3]=effect`。`effect` 取值：`0=solid`、`1=breathe`、`2=rainbow`、`3=alert`。
 
 ### 庭院 JSON 命令
 
@@ -282,11 +304,25 @@ Topic：`xiaozhi/garden/cmd`
 | `fan` | `on` / `off` |
 | `water_pump` | `on` / `off` |
 | `atomizer` | `on` / `off` |
-| `safety_switch` | `on` / `off` |
+| `safety_switch` | `normal` / `connect` / `on` = 导通供电；`cut_off` / `trip` / `off` = 切断 |
 | `servo` | `hang` / `collect` |
 | `auto_mode` | 读取 `value` |
 | `all_lights` | `on` / `off` |
+| `all_devices` | `on` / `off`，关闭全部用户设备时安防总闸保持高电平导通 |
 | `emergency` | `fire` |
+| `strip_light` | `rgb`，`value={"red":255,"green":180,"blue":90,"brightness":35,"effect":0}` |
+| `ambience` | `scene`，`value=night/hot/relax/party/rain/safe` |
+
+氛围场景映射：
+
+| scene | 典型话术 | 联动动作 |
+| --- | --- | --- |
+| `night` | 夜间模式 | 灯带暖白低亮，关闭风扇和雾化器 |
+| `hot` | 有点闷热、帮我降温 | 灯带浅蓝，打开风扇和雾化器 |
+| `relax` | 放松一下、休闲模式 | 柔和绿色呼吸灯 |
+| `party` | 聚会氛围、节日模式 | 彩虹渐变灯效 |
+| `rain` | 雨天氛围 | 冷蓝呼吸灯，收衣仍由雨滴自动模式处理 |
+| `safe` | 安全照明、巡检模式 | 白色高亮，关闭水泵和雾化器，安防总闸恢复高电平导通 |
 
 ### 传感器 JSON 上报
 
@@ -339,6 +375,14 @@ Topic：`xiaozhi/iot/emergency/{mac}`
 
 庭院相关自然语言应优先落到 `self.garden.*`，避免同时注册多个语义重复的“开某个庭院灯”入口。底层所有控制最终进入 `App_Garden_*` 或 `App_IOT_*`，减少重复实现。
 
+新增氛围灯 MCP：
+
+| 工具 | 参数 | 用途 |
+| --- | --- | --- |
+| `self.garden.set_strip_rgb` | `red/green/blue/brightness/effect` | 精确设置 WS2812B 灯带颜色、亮度和效果 |
+| `self.garden.set_ambience_scene` | `scene` | 让大模型把自然语言映射到夜间、闷热、休闲、聚会、雨天、安全等场景 |
+| `self.garden.set_safety_switch` | `action=normal/cut_off` | 明确控制安防总闸；`normal` 为 GPIO17 高电平导通，`cut_off` 为低电平切断 |
+
 ## 事件唤醒与 TTS 播报
 
 主机通过 `ENABLE_SENSOR_TTS_ALERT` 控制传感器事件播报：
@@ -371,7 +415,7 @@ Topic：`xiaozhi/iot/emergency/{mac}`
 
 1. 火焰传感器 GPIO 下降沿触发中断。
 2. 从机 `iot_ctrl` 任务置位 `fire_status=FIRE_CONFIRMED`。
-3. 安防总闸继电器吸合，切断庭院负载。
+3. 安防总闸 GPIO17 拉低，继电器断开，切断庭院负载。
 4. 水泵、雾化器关闭，避免电气风险。
 5. 三路照明打开，方便现场确认。
 6. 从机发布 `xiaozhi/iot/emergency/{mac}`。

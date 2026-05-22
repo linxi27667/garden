@@ -43,6 +43,12 @@ typedef struct {
      servo_angle_t       servo[SERVO_COUNT];
      fire_state_enum_t   fire_status;
      bool                auto_mode;
+     uint8_t             strip_red;
+     uint8_t             strip_green;
+     uint8_t             strip_blue;
+     uint8_t             strip_brightness;
+     uint8_t             strip_effect;
+     uint8_t             ambience_scene;
 } device_flags_enum_t;
 
 extern volatile device_flags_enum_t g_device_flags;
