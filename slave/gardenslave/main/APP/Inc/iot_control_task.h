@@ -35,7 +35,8 @@ typedef enum {
 #define RELAY_WATER_PUMP_NAME       "水泵"
 #define RELAY_ATOMIZER_NAME         "雾化器"
 #define RELAY_SAFETY_SWITCH_NAME    "安防总闸"
-#define SERVO_CLOTHES_NAME          "晾衣架"
+#define SERVO_RAIN_SHELTER_NAME     "智能遮雨棚"
+#define SERVO_CLOTHES_NAME          SERVO_RAIN_SHELTER_NAME
 
 typedef struct {
      device_switch_state_t light[LIGHT_COUNT];
@@ -43,6 +44,10 @@ typedef struct {
      servo_angle_t       servo[SERVO_COUNT];
      fire_state_enum_t   fire_status;
      bool                auto_mode;
+     bool                auto_fan;
+     bool                auto_atomizer;
+     bool                auto_watering;
+     bool                auto_rain_shelter;
      uint8_t             strip_red;
      uint8_t             strip_green;
      uint8_t             strip_blue;

@@ -32,7 +32,9 @@ typedef struct {
 
 typedef struct {
     uint16_t soil_mv;
+    uint8_t soil_percent;
     uint16_t rain_adc_mv;
+    uint8_t rain_percent;
     uint8_t fire_status;     // 0=normal, 1=warning, 2=confirmed
     uint8_t rain_status;     // 0=dry, 1=raining
     uint8_t help_status;     // 0=inactive, 1=active

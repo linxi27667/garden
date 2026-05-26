@@ -4,6 +4,8 @@
 #include "mqtt_iot_protocol.h"
 #include "mcp_server.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 #include <string>
 
@@ -37,8 +39,8 @@ void Register_Garden_Mcp_Tools(void) {
     mcp_server.AddTool("self.garden.control",
         "智慧庭院统一控制工具，用一个入口控制常用执行器，避免选择过多底层 MCP。\n"
         "Args:\n"
-        "  target: courtyard_west_light/strip_light/corridor_long_light/fan/water_pump/atomizer/safety_switch/servo/all_lights/all_devices\n"
-        "  action: on/off，safety_switch 用 normal/cut_off，servo 用 hang/collect\n"
+        "  target: courtyard_west_light/strip_light/corridor_long_light/fan/water_pump/atomizer/safety_switch/rain_shelter/servo/all_lights/all_devices\n"
+        "  action: on/off，safety_switch 用 normal/cut_off，rain_shelter 用 deploy/retract\n"
         "安全语义：safety_switch normal=GPIO17高电平导通，cut_off=GPIO17低电平切断。",
         PropertyList({
             Property("target", kPropertyTypeString),
@@ -76,10 +78,10 @@ void Register_Garden_Mcp_Tools(void) {
                 if (Is_On_Action(action)) App_Garden_Set_Safety_Switch(GARDEN_SWITCH_ON);
                 else if (Is_Off_Action(action)) App_Garden_Set_Safety_Switch(GARDEN_SWITCH_OFF);
                 else return Garden_Control_Result(false, target, action, "安防总闸只支持 normal/cut_off");
-            } else if (target == "servo") {
-                if (action == "hang") App_Garden_Set_Servo(GARDEN_SERVO_HANG);
-                else if (action == "collect") App_Garden_Set_Servo(GARDEN_SERVO_COLLECT);
-                else return Garden_Control_Result(false, target, action, "晾衣架只支持 hang/collect");
+            } else if (target == "servo" || target == "rain_shelter" || target == "canopy") {
+                if (action == "deploy" || action == "open" || action == "hang") App_Garden_Set_Servo(GARDEN_SERVO_DEPLOY);
+                else if (action == "retract" || action == "close" || action == "collect") App_Garden_Set_Servo(GARDEN_SERVO_RETRACT);
+                else return Garden_Control_Result(false, target, action, "遮雨棚只支持 deploy/retract");
             } else if (target == "all_lights") {
                 if (Is_On_Action(action)) App_Garden_All_Lights_On();
                 else if (Is_Off_Action(action)) App_Garden_All_Lights_Off();
@@ -149,8 +151,8 @@ void Register_Garden_Mcp_Tools(void) {
     mcp_server.AddTool("self.garden.set_ambience_scene",
         "设置智慧庭院氛围场景，并按场景联动风扇、雾化器、水泵等设备。\n"
         "Args:\n"
-        "  scene: night=夜间暖白, hot=闷热降温浅蓝并打开风扇/雾化器, relax=休闲呼吸绿, party=彩虹, rain=雨天冷蓝, safe=安全照明\n"
-        "用户说夜间模式、有点闷热、放松一下、聚会氛围、雨天氛围、安全照明时优先使用。",
+        "  scene: normal=正常暖白, night=夜间暖白, hot=闷热降温浅蓝并打开风扇/雾化器, relax=休闲呼吸绿, party=彩虹, rain=雨天冷蓝, safe=安全照明\n"
+        "用户说恢复正常、夜间模式、有点闷热、放松一下、聚会氛围、雨天氛围、安全照明时优先使用。",
         PropertyList({
             Property("scene", kPropertyTypeString)
         }),
@@ -161,7 +163,26 @@ void Register_Garden_Mcp_Tools(void) {
             cJSON* json = cJSON_CreateObject();
             cJSON_AddBoolToObject(json, "success", ok);
             cJSON_AddStringToObject(json, "scene", scene.c_str());
-            cJSON_AddStringToObject(json, "message", ok ? "氛围场景已应用" : "未知氛围场景，可选: night, hot, relax, party, rain, safe");
+            cJSON_AddStringToObject(json, "message", ok ? "氛围场景已应用" : "未知氛围场景，可选: normal, night, hot, relax, party, rain, safe");
+            return json;
+        });
+
+    mcp_server.AddTool("self.garden.calibrate_strip",
+        "一键校准 WS2812B 灯带颜色顺序。依次显示红、绿、蓝，最后回到正常暖白。\n"
+        "如果看到的颜色顺序不对，说明硬件灯带色序和驱动配置不一致，需要调整 WS2812 strip color format。",
+        PropertyList(),
+        [](const PropertyList& properties) -> ReturnValue {
+            App_Garden_Set_Strip_RGB(255, 0, 0, 60, IOT_STRIP_EFFECT_SOLID);
+            vTaskDelay(pdMS_TO_TICKS(700));
+            App_Garden_Set_Strip_RGB(0, 255, 0, 60, IOT_STRIP_EFFECT_SOLID);
+            vTaskDelay(pdMS_TO_TICKS(700));
+            App_Garden_Set_Strip_RGB(0, 0, 255, 60, IOT_STRIP_EFFECT_SOLID);
+            vTaskDelay(pdMS_TO_TICKS(700));
+            bool ok = App_Garden_Set_Ambience_Scene("normal");
+
+            cJSON* json = cJSON_CreateObject();
+            cJSON_AddBoolToObject(json, "success", ok);
+            cJSON_AddStringToObject(json, "message", "灯带已完成红绿蓝校准序列，并恢复正常暖白");
             return json;
         });
 
@@ -185,9 +206,9 @@ void Register_Garden_Mcp_Tools(void) {
         });
 
     mcp_server.AddTool("self.garden.set_servo",
-        "控制智慧庭院的晾衣架舵机。\n"
+        "控制智慧庭院的智能遮雨棚舵机。\n"
         "Args:\n"
-        "  action: hang=晾衣服(伸出), collect=收衣服(收回)",
+        "  action: deploy=展开遮雨棚, retract=收回遮雨棚；兼容 hang/collect",
         PropertyList({
             Property("action", kPropertyTypeString)
         }),
@@ -195,24 +216,23 @@ void Register_Garden_Mcp_Tools(void) {
             auto action = properties["action"].value<std::string>();
             std::string desc;
 
-            if (action == "hang") {
-                App_Garden_Set_Servo(GARDEN_SERVO_HANG);
-                desc = "晾衣服";
-            } else if (action == "collect") {
-                App_Garden_Set_Servo(GARDEN_SERVO_COLLECT);
-                desc = "收衣服";
+            if (action == "deploy" || action == "open" || action == "hang") {
+                App_Garden_Set_Servo(GARDEN_SERVO_DEPLOY);
+                desc = "展开遮雨棚";
+            } else if (action == "retract" || action == "close" || action == "collect") {
+                App_Garden_Set_Servo(GARDEN_SERVO_RETRACT);
+                desc = "收回遮雨棚";
             } else {
                 cJSON* json = cJSON_CreateObject();
                 cJSON_AddBoolToObject(json, "success", false);
-                cJSON_AddStringToObject(json, "message", "无效操作，请用hang或collect");
+                cJSON_AddStringToObject(json, "message", "无效操作，请用 deploy 或 retract");
                 return json;
             }
 
             cJSON* json = cJSON_CreateObject();
             cJSON_AddBoolToObject(json, "success", true);
             cJSON_AddStringToObject(json, "action", desc.c_str());
-            cJSON_AddStringToObject(json, "message",
-                action == "hang" ? "衣服已晾好" : "衣服已收进来");
+            cJSON_AddStringToObject(json, "message", desc.c_str());
             return json;
         });
 
@@ -309,12 +329,11 @@ void Register_Garden_Mcp_Tools(void) {
         "用户说'火灾解除了'、'恢复正常'、'取消警报'时使用。",
         PropertyList(),
         [](const PropertyList& properties) -> ReturnValue {
-            App_IOT_Fire_Reset();
-            App_Garden_Set_Safety_Switch(GARDEN_SWITCH_ON);
+            App_Garden_Fire_Reset();
 
             cJSON* json = cJSON_CreateObject();
             cJSON_AddBoolToObject(json, "success", true);
-            cJSON_AddStringToObject(json, "message", "火灾警报已解除，安防总闸已恢复高电平导通，设备恢复正常运行");
+            cJSON_AddStringToObject(json, "message", "火灾警报已解除，安防总闸已恢复高电平导通，氛围灯已恢复正常暖白");
             return json;
         });
 
@@ -352,9 +371,10 @@ void Register_Garden_Mcp_Tools(void) {
 
     mcp_server.AddTool("self.garden.set_auto_mode",
         "设置智慧庭院自动模式。\n"
-        "自动模式下：雨天自动收衣、高温自动开风扇/雾化、干燥自动开雾化。\n"
+        "开启时会一键打开全局自动模式，并恢复风扇、雾化器、自动浇水、遮雨棚四个单设备自动接管。\n"
+        "自动模式下：雨天自动展开遮雨棚、高温自动开风扇/雾化、土壤干燥自动浇水。\n"
         "Args:\n"
-        "  enable: true=开启自动模式/false=关闭",
+        "  enable: true=一键开启全部自动模式/false=关闭全局自动模式",
         PropertyList({
             Property("enable", kPropertyTypeBoolean)
         }),
@@ -365,14 +385,36 @@ void Register_Garden_Mcp_Tools(void) {
             cJSON* json = cJSON_CreateObject();
             cJSON_AddBoolToObject(json, "success", true);
             cJSON_AddBoolToObject(json, "auto_mode", enable);
-            cJSON_AddStringToObject(json, "message", enable ? "自动模式已开启" : "自动模式已关闭");
+            cJSON_AddStringToObject(json, "message", enable ? "全部自动模式已一键开启" : "全局自动模式已关闭");
+            return json;
+        });
+
+    mcp_server.AddTool("self.garden.set_device_auto",
+        "设置智慧庭院单个设备的自动接管。小智手动控制某个设备后，该设备自动接管会自动关闭，防止自动逻辑抢回控制权。\n"
+        "Args:\n"
+        "  target: fan/atomizer/watering/rain_shelter\n"
+        "  enable: true=允许自动接管, false=禁止自动接管",
+        PropertyList({
+            Property("target", kPropertyTypeString),
+            Property("enable", kPropertyTypeBoolean)
+        }),
+        [](const PropertyList& properties) -> ReturnValue {
+            auto target = properties["target"].value<std::string>();
+            bool enable = properties["enable"].value<bool>();
+            bool ok = App_Garden_Set_Device_Auto(target.c_str(), enable);
+
+            cJSON* json = cJSON_CreateObject();
+            cJSON_AddBoolToObject(json, "success", ok);
+            cJSON_AddStringToObject(json, "target", target.c_str());
+            cJSON_AddBoolToObject(json, "enable", enable);
+            cJSON_AddStringToObject(json, "message", ok ? "单设备自动接管已更新" : "未知目标，可选 fan/atomizer/watering/rain_shelter");
             return json;
         });
 
     mcp_server.AddTool("self.garden.all",
         "一键打开或关闭智慧庭院全部灯光或全部用户设备。\n"
         "Args:\n"
-        "  scope: lights=只控制全部灯光, devices=控制灯光/风扇/水泵/雾化器/晾衣架等全部用户设备\n"
+        "  scope: lights=只控制全部灯光, devices=控制灯光/风扇/水泵/雾化器/遮雨棚等全部用户设备\n"
         "  action: on=开启, off=关闭\n"
         "注意：关闭全部设备不会切断安防总闸，安防总闸保持高电平导通；火灾熔断请使用 self.garden.emergency。",
         PropertyList({
@@ -424,5 +466,5 @@ void Register_Garden_Mcp_Tools(void) {
         });
 #endif
 
-    ESP_LOGI(TAG, "Garden MCP tools registered (optimized mode, %d tools)", 9);
+    ESP_LOGI(TAG, "Garden MCP tools registered (optimized mode, %d tools)", 11);
 }

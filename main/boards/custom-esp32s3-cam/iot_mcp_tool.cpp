@@ -103,8 +103,8 @@ bool Iot_Mcp_Control_Servo_Angle(const char* device_name, uint8_t servo_index, u
 }
 
 bool Iot_Mcp_Scenario_Rain_Collect_Clothes(void) {
-    ESP_LOGI(TAG, "[MCP] Scenario: Rain - collecting clothes");
-    return App_IOT_Scenario_Rain_Collect_Clothes("三楼设备");
+    ESP_LOGI(TAG, "[MCP] Scenario: Rain - deploying shelter");
+    return App_IOT_Scenario_Rain_Deploy_Shelter("三楼设备");
 }
 
 bool Iot_Mcp_Scenario_Ventilate(uint8_t window_angle, bool fan_on) {
@@ -120,4 +120,3 @@ void Iot_Mcp_Get_Sensors_Json(char* buffer, int buffer_size) {
 void Iot_Mcp_Get_Event_Log_Json(char* buffer, int buffer_size) {
     App_IOT_Get_Event_Log_Json(buffer, buffer_size);
 }
-

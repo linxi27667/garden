@@ -9,5 +9,6 @@
 
 void Sensor_ADC_Task_Init(void);
 void Sensor_ADC_Notify_Relay_Manual(uint8_t relay_index);
+void Sensor_ADC_Notify_Servo_Manual(uint8_t servo_index);
 
 #endif

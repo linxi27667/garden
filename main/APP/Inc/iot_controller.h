@@ -17,8 +17,8 @@
 
 #define CHINESE_SERVO_NAMES(n) \
     "一楼设备:大门/待定/待定; " \
-    "二楼设备:晾衣架/待定/待定; " \
-    "三楼设备:左天窗/右天窗/晾衣架"
+    "二楼设备:遮雨棚/待定/待定; " \
+    "三楼设备:左天窗/右天窗/遮雨棚"
 
 #ifdef __cplusplus
 extern "C" {
@@ -49,6 +49,7 @@ bool App_IOT_Scenario_GoodNight(const char* all_floors_device);
 bool App_IOT_Scenario_Emergency(void);
 bool App_IOT_Fire_Reset(void);
 bool App_IOT_Control_Servo_Angle(const char* device_name, uint8_t servo_index, uint8_t angle);
+bool App_IOT_Scenario_Rain_Deploy_Shelter(const char* third_floor_device);
 bool App_IOT_Scenario_Rain_Collect_Clothes(const char* third_floor_device);
 bool App_IOT_Scenario_Ventilate(const char* third_floor_device, uint8_t window_angle, uint8_t fan_on);
 void App_IOT_Get_Sensors_Json(char* buffer, int buffer_size);

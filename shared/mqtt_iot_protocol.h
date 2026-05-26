@@ -42,7 +42,8 @@ typedef enum {
     IOT_CMD_RAIN_ALERT = 0x37,
     IOT_CMD_HELP_ALERT = 0x38,
     IOT_CMD_SET_STRIP_RGB = 0x39,
-    IOT_CMD_SET_AMBIENCE_SCENE = 0x3A
+    IOT_CMD_SET_AMBIENCE_SCENE = 0x3A,
+    IOT_CMD_SET_DEVICE_AUTO = 0x3B
 } iot_command_t;
 
 typedef enum {
@@ -59,8 +60,16 @@ typedef enum {
     IOT_AMBIENCE_SCENE_RELAX = 3,
     IOT_AMBIENCE_SCENE_PARTY = 4,
     IOT_AMBIENCE_SCENE_RAIN = 5,
-    IOT_AMBIENCE_SCENE_SAFE = 6
+    IOT_AMBIENCE_SCENE_SAFE = 6,
+    IOT_AMBIENCE_SCENE_NORMAL = 7
 } iot_ambience_scene_t;
+
+typedef enum {
+    IOT_AUTO_DEVICE_FAN = 0,
+    IOT_AUTO_DEVICE_ATOMIZER = 1,
+    IOT_AUTO_DEVICE_WATERING = 2,
+    IOT_AUTO_DEVICE_RAIN_SHELTER = 3
+} iot_auto_device_t;
 
 /* ================= 数据包结构 (与原ESP-NOW一致) ================= */
 typedef struct {

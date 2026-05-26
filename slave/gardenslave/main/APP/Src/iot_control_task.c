@@ -82,7 +82,7 @@ static void HW_Servo_Set_Angle(ledc_channel_t channel, int16_t angle) {
 #define WATER_PUMP_GPIO      GPIO_NUM_15
 #define ATOMIZER_GPIO        GPIO_NUM_16
 #define SAFETY_SWITCH_GPIO   GPIO_NUM_17
-#define SERVO_CLOTHES_GPIO   GPIO_NUM_18
+#define SERVO_RAIN_SHELTER_GPIO GPIO_NUM_18
 
 #define FIRE_PIN             GPIO_NUM_2
 #define HELP_PIN             GPIO_NUM_48
@@ -99,7 +99,7 @@ static gpio_num_t g_relay_gpios[RELAY_COUNT] = {
     FAN_RELAY_GPIO, WATER_PUMP_GPIO, ATOMIZER_GPIO, SAFETY_SWITCH_GPIO
 };
 
-static gpio_num_t g_servo_gpios[SERVO_COUNT] = {SERVO_CLOTHES_GPIO};
+static gpio_num_t g_servo_gpios[SERVO_COUNT] = {SERVO_RAIN_SHELTER_GPIO};
 
 volatile device_flags_enum_t g_device_flags = {
     .light = {SWITCH_OFF, SWITCH_OFF, SWITCH_OFF},
@@ -107,12 +107,16 @@ volatile device_flags_enum_t g_device_flags = {
     .servo = {SERVO_MIN_ANGLE},
     .fire_status = FIRE_NORMAL,
     .auto_mode = true,
+    .auto_fan = true,
+    .auto_atomizer = true,
+    .auto_watering = true,
+    .auto_rain_shelter = true,
     .strip_red = 255,
-    .strip_green = 180,
-    .strip_blue = 90,
+    .strip_green = 185,
+    .strip_blue = 110,
     .strip_brightness = 35,
     .strip_effect = IOT_STRIP_EFFECT_SOLID,
-    .ambience_scene = IOT_AMBIENCE_SCENE_CUSTOM
+    .ambience_scene = IOT_AMBIENCE_SCENE_NORMAL
 };
 
 SemaphoreHandle_t g_device_flags_mutex = NULL;
@@ -237,7 +241,7 @@ void Iot_Help_Emergency_Response(void) {
 void Iot_Rain_Alert_Response(void) {
     ESP_LOGW(TAG, "=== RAIN ALERT (SLAVE) ===");
 
-    MQTT_Publish_Emergency(EMERGENCY_RAIN, "Rain detected, clothes auto-collected");
+    MQTT_Publish_Emergency(EMERGENCY_RAIN, "Rain detected, rain shelter auto-deployed");
 
     ESP_LOGW(TAG, "Rain alert: MQTT notification sent to master");
 }

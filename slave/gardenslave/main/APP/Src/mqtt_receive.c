@@ -91,50 +91,57 @@ static void Apply_Ambience_Scene_Locked(uint8_t scene_id) {
     g_device_flags.ambience_scene = scene_id;
 
     switch (scene_id) {
+    case IOT_AMBIENCE_SCENE_NORMAL:
+        g_device_flags.strip_red = 255;
+        g_device_flags.strip_green = 185;
+        g_device_flags.strip_blue = 110;
+        g_device_flags.strip_brightness = 35;
+        g_device_flags.strip_effect = IOT_STRIP_EFFECT_SOLID;
+        break;
     case IOT_AMBIENCE_SCENE_NIGHT:
         g_device_flags.strip_red = 255;
-        g_device_flags.strip_green = 190;
-        g_device_flags.strip_blue = 120;
-        g_device_flags.strip_brightness = 28;
+        g_device_flags.strip_green = 147;
+        g_device_flags.strip_blue = 70;
+        g_device_flags.strip_brightness = 24;
         g_device_flags.strip_effect = IOT_STRIP_EFFECT_SOLID;
         g_device_flags.relay[0] = SWITCH_OFF;
         g_device_flags.relay[2] = SWITCH_OFF;
         break;
     case IOT_AMBIENCE_SCENE_HOT:
         g_device_flags.strip_red = 120;
-        g_device_flags.strip_green = 190;
+        g_device_flags.strip_green = 200;
         g_device_flags.strip_blue = 255;
-        g_device_flags.strip_brightness = 55;
+        g_device_flags.strip_brightness = 50;
         g_device_flags.strip_effect = IOT_STRIP_EFFECT_SOLID;
         g_device_flags.relay[0] = SWITCH_ON;
         g_device_flags.relay[2] = SWITCH_ON;
         break;
     case IOT_AMBIENCE_SCENE_RELAX:
-        g_device_flags.strip_red = 120;
-        g_device_flags.strip_green = 220;
-        g_device_flags.strip_blue = 150;
-        g_device_flags.strip_brightness = 45;
+        g_device_flags.strip_red = 90;
+        g_device_flags.strip_green = 200;
+        g_device_flags.strip_blue = 120;
+        g_device_flags.strip_brightness = 40;
         g_device_flags.strip_effect = IOT_STRIP_EFFECT_BREATHE;
         break;
     case IOT_AMBIENCE_SCENE_PARTY:
         g_device_flags.strip_red = 255;
         g_device_flags.strip_green = 255;
         g_device_flags.strip_blue = 255;
-        g_device_flags.strip_brightness = 65;
+        g_device_flags.strip_brightness = 60;
         g_device_flags.strip_effect = IOT_STRIP_EFFECT_RAINBOW;
         break;
     case IOT_AMBIENCE_SCENE_RAIN:
-        g_device_flags.strip_red = 80;
-        g_device_flags.strip_green = 130;
+        g_device_flags.strip_red = 70;
+        g_device_flags.strip_green = 120;
         g_device_flags.strip_blue = 255;
-        g_device_flags.strip_brightness = 35;
+        g_device_flags.strip_brightness = 32;
         g_device_flags.strip_effect = IOT_STRIP_EFFECT_BREATHE;
         break;
     case IOT_AMBIENCE_SCENE_SAFE:
-        g_device_flags.strip_red = 255;
-        g_device_flags.strip_green = 255;
+        g_device_flags.strip_red = 240;
+        g_device_flags.strip_green = 245;
         g_device_flags.strip_blue = 255;
-        g_device_flags.strip_brightness = 75;
+        g_device_flags.strip_brightness = 70;
         g_device_flags.strip_effect = IOT_STRIP_EFFECT_SOLID;
         g_device_flags.relay[1] = SWITCH_OFF;
         g_device_flags.relay[2] = SWITCH_OFF;
@@ -183,6 +190,7 @@ static void Process_Command(const iot_command_packet_t* cmd) {
                    cmd->gpio_index < SERVO_GPIO_INDEX_BASE + SERVO_COUNT) {
             uint8_t servo_idx = cmd->gpio_index - SERVO_GPIO_INDEX_BASE;
             g_device_flags.servo[servo_idx] = cmd->value ? SERVO_MAX_ANGLE : SERVO_MIN_ANGLE;
+            Sensor_ADC_Notify_Servo_Manual(servo_idx);
             ESP_LOGI(TAG, "Servo[%d] = %d deg", servo_idx, g_device_flags.servo[servo_idx]);
         }
         DEVICE_FLAGS_UNLOCK();
@@ -245,6 +253,7 @@ static void Process_Command(const iot_command_packet_t* cmd) {
             if (angle > SERVO_MAX_ANGLE) angle = SERVO_MAX_ANGLE;
             DEVICE_FLAGS_LOCK();
             g_device_flags.servo[local_idx] = angle;
+            Sensor_ADC_Notify_Servo_Manual(local_idx);
             DEVICE_FLAGS_UNLOCK();
             ESP_LOGI(TAG, "Servo[%d] = %d deg", local_idx, (int)angle);
             Send_Response(IOT_CMD_SET_SERVO, cmd->gpio_index, (uint8_t)angle);
@@ -254,17 +263,40 @@ static void Process_Command(const iot_command_packet_t* cmd) {
     case IOT_CMD_SET_AUTO_MODE:
         DEVICE_FLAGS_LOCK();
         g_device_flags.auto_mode = (cmd->value == 1);
+        if (g_device_flags.auto_mode) {
+            g_device_flags.auto_fan = true;
+            g_device_flags.auto_atomizer = true;
+            g_device_flags.auto_watering = true;
+            g_device_flags.auto_rain_shelter = true;
+        }
         DEVICE_FLAGS_UNLOCK();
         ESP_LOGI(TAG, "Auto mode = %s", cmd->value ? "ON" : "OFF");
         Send_Response(IOT_CMD_SET_AUTO_MODE, 0, cmd->value);
+        break;
+
+    case IOT_CMD_SET_DEVICE_AUTO:
+        DEVICE_FLAGS_LOCK();
+        if (cmd->gpio_index == IOT_AUTO_DEVICE_FAN) {
+            g_device_flags.auto_fan = (cmd->value == 1);
+        } else if (cmd->gpio_index == IOT_AUTO_DEVICE_ATOMIZER) {
+            g_device_flags.auto_atomizer = (cmd->value == 1);
+        } else if (cmd->gpio_index == IOT_AUTO_DEVICE_WATERING) {
+            g_device_flags.auto_watering = (cmd->value == 1);
+        } else if (cmd->gpio_index == IOT_AUTO_DEVICE_RAIN_SHELTER) {
+            g_device_flags.auto_rain_shelter = (cmd->value == 1);
+        }
+        DEVICE_FLAGS_UNLOCK();
+        ESP_LOGI(TAG, "Device auto[%d] = %s", cmd->gpio_index, cmd->value ? "ON" : "OFF");
+        Send_Response(IOT_CMD_SET_DEVICE_AUTO, cmd->gpio_index, cmd->value);
         break;
 
     case IOT_CMD_FIRE_RESET:
         DEVICE_FLAGS_LOCK();
         g_device_flags.fire_status = FIRE_NORMAL;
         g_device_flags.relay[3] = SWITCH_ON;
+        Apply_Ambience_Scene_Locked(IOT_AMBIENCE_SCENE_NORMAL);
         DEVICE_FLAGS_UNLOCK();
-        ESP_LOGI(TAG, "Fire status reset to NORMAL, safety switch ON");
+        ESP_LOGI(TAG, "Fire status reset to NORMAL, safety switch ON, ambience restored");
         Send_Response(IOT_CMD_FIRE_RESET, LIGHT_COUNT + 3, 1);
         break;
 

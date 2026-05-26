@@ -203,6 +203,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hira
       <button class="scene-btn" onclick="sendScene('party')">聚会</button>
       <button class="scene-btn" onclick="sendScene('rain')">雨天</button>
       <button class="scene-btn" onclick="sendScene('safe')">安全</button>
+      <button class="scene-btn" onclick="sendScene('normal')">正常</button>
+      <button class="scene-btn" onclick="calibrateStrip()">校准</button>
     </div>
   </div>
 
@@ -223,13 +225,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hira
 
     <div class="card">
       <div class="card-header">
-        <div class="card-icon orange">👕</div>
-        <span class="card-name">晾衣架</span>
-        <span class="card-status" id="servo_status">已晾出</span>
+        <div class="card-icon orange">☔</div>
+        <span class="card-name">智能遮雨棚</span>
+        <span class="card-status" id="servo_status">已展开</span>
       </div>
       <div class="btn-group">
-        <button class="btn btn-green active" id="servo_hang" onclick="sendCmd('servo','hang')">晾衣服</button>
-        <button class="btn btn-orange" id="servo_collect" onclick="sendCmd('servo','collect')">收衣服</button>
+        <button class="btn btn-green active" id="servo_hang" onclick="sendCmd('rain_shelter','deploy')">展开</button>
+        <button class="btn btn-orange" id="servo_collect" onclick="sendCmd('rain_shelter','retract')">收回</button>
       </div>
     </div>
 
@@ -238,7 +240,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hira
         <span class="auto-icon">🤖</span>
         <div class="auto-text">
           <div class="auto-title">自动模式</div>
-          <div class="auto-desc">雨天收衣 · 光控补光</div>
+          <div class="auto-desc">雨天遮雨 · 自动浇水 · 温湿度调节</div>
         </div>
       </div>
       <label class="toggle">
@@ -257,6 +259,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hira
     <button class="quick-btn off" onclick="sendCmd('all_devices','off')">⏻ 全部设备关</button>
   </div>
 
+  <div class="section-title">自动接管</div>
+  <div class="quick-actions">
+    <label class="quick-btn on"><input type="checkbox" id="auto_fan" checked onchange="sendDeviceAuto('fan',this.checked)"> 风扇自动</label>
+    <label class="quick-btn on"><input type="checkbox" id="auto_atomizer" checked onchange="sendDeviceAuto('atomizer',this.checked)"> 雾化自动</label>
+    <label class="quick-btn on"><input type="checkbox" id="auto_watering" checked onchange="sendDeviceAuto('watering',this.checked)"> 浇水自动</label>
+    <label class="quick-btn on"><input type="checkbox" id="auto_rain_shelter" checked onchange="sendDeviceAuto('rain_shelter',this.checked)"> 遮雨自动</label>
+  </div>
+
   <div class="section-title">环境监测</div>
   <div class="cards">
     <div class="card">
@@ -270,10 +280,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hira
 
     <div class="card">
       <div class="card-header">
-        <div class="card-icon orange">☀️</div>
-        <span class="card-name">光照强度</span>
+        <div class="card-icon orange">🌡️</div>
+        <span class="card-name">温湿度</span>
       </div>
-      <div class="sensor-value" id="light_value">--<span class="unit">%</span></div>
+      <div class="sensor-value" id="light_value">--<span class="unit">℃</span></div>
       <div class="sensor-bar"><div class="sensor-bar-fill orange" id="light_bar" style="width:0%"></div></div>
     </div>
 
@@ -370,6 +380,17 @@ function sendScene(scene) {
   sendCmd('ambience', 'scene', scene);
 }
 
+function calibrateStrip() {
+  sendCmd('strip_light', 'rgb', {red: 255, green: 0, blue: 0, brightness: 60, effect: 0});
+  setTimeout(function(){ sendCmd('strip_light', 'rgb', {red: 0, green: 255, blue: 0, brightness: 60, effect: 0}); }, 700);
+  setTimeout(function(){ sendCmd('strip_light', 'rgb', {red: 0, green: 0, blue: 255, brightness: 60, effect: 0}); }, 1400);
+  setTimeout(function(){ sendScene('normal'); }, 2100);
+}
+
+function sendDeviceAuto(target, enable) {
+  sendCmd('device_auto', 'set', {target: target, enable: enable});
+}
+
 function handleStatus(data) {
   var state = data.actual || data;
 
@@ -410,7 +431,7 @@ function handleStatus(data) {
   if (state.servo === 1) {
     servoHang.classList.add('active');
     servoCollect.classList.remove('active');
-    document.getElementById('servo_status').textContent = '已晾出';
+    document.getElementById('servo_status').textContent = '已展开';
   } else {
     servoHang.classList.remove('active');
     servoCollect.classList.add('active');
@@ -418,6 +439,10 @@ function handleStatus(data) {
   }
 
   setToggle('auto_mode', state.auto_mode === true);
+  setToggle('auto_fan', state.auto_fan !== false);
+  setToggle('auto_atomizer', state.auto_atomizer !== false);
+  setToggle('auto_watering', state.auto_watering !== false);
+  setToggle('auto_rain_shelter', state.auto_rain_shelter !== false);
 }
 
 function handleSensors(data) {
@@ -425,9 +450,10 @@ function handleSensors(data) {
   document.getElementById('soil_value').innerHTML = soil + '<span class="unit">%</span>';
   document.getElementById('soil_bar').style.width = soil + '%';
 
-  var light = data.light || 0;
-  document.getElementById('light_value').innerHTML = light + '<span class="unit">%</span>';
-  document.getElementById('light_bar').style.width = light + '%';
+  var temp = typeof data.temperature === 'number' ? data.temperature : 0;
+  var hum = typeof data.humidity === 'number' ? data.humidity : 0;
+  document.getElementById('light_value').innerHTML = temp.toFixed(1) + '<span class="unit">℃</span>';
+  document.getElementById('light_bar').style.width = Math.max(0, Math.min(100, hum)) + '%';
 
   var rainEl = document.getElementById('rain_status');
   if (data.rain_state === 'wet' || data.rain === 1) {

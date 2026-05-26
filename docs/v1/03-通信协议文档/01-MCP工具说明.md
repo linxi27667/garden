@@ -162,7 +162,7 @@
 
 | AI 意图 | MCP 工具 | 示例话术 |
 |---------|----------|----------|
-| 通用设备控制 | `self.garden.control(target, action)` | "打开雾化器"、"切断安防总闸"、"收回晾衣架" |
+| 通用设备控制 | `self.garden.control(target, action)` | "打开雾化器"、"切断安防总闸"、"展开遮雨棚" |
 | 一键灯光/设备 | `self.garden.all(scope, action)` | "打开所有灯"、"关闭所有设备" |
 | 精确调色 | `self.garden.set_strip_rgb(red, green, blue, brightness, effect)` | "把庭院灯带调成浅蓝色，亮度 50%" |
 | 夜间模式 | `self.garden.set_ambience_scene("night")` | "进入夜间模式" |
@@ -171,6 +171,9 @@
 | 聚会氛围 | `self.garden.set_ambience_scene("party")` | "打开聚会模式" |
 | 雨天氛围 | `self.garden.set_ambience_scene("rain")` | "切到雨天氛围" |
 | 安全照明 | `self.garden.set_ambience_scene("safe")` | "打开安全照明" |
+| 恢复正常 | `self.garden.set_ambience_scene("normal")` | "恢复正常灯光" |
+| 单设备自动 | `self.garden.set_device_auto(target, enable)` | "恢复自动浇水"、"关闭遮雨棚自动接管" |
+| 灯带校准 | `self.garden.calibrate_strip()` | "校准一下灯带颜色" |
 | 火灾应急 | `self.garden.emergency()` | "触发火灾应急" |
 | 解除火灾 | `self.garden.fire_reset()` | "火灾解除了，恢复正常" |
 
@@ -251,9 +254,9 @@ typedef struct {
 | 3 | 继电器1 | 电视电源 | 电视电源 | 三楼电视电源 |
 | 4 | 继电器2 | 空调电源 | 空调电源 | 三楼空调电源 |
 | 5 | 继电器3 | 热水器电源 | 热水器电源 | 三楼热水器电源 |
-| 6 | 舵机1 | 大门 | 晾衣架 | **左天窗** |
+| 6 | 舵机1 | 大门 | 遮雨棚 | **左天窗** |
 | 7 | 舵机2 | 窗户 | 窗帘 | **右天窗** |
-| 8 | 舵机3 | 门锁 | 阳台门 | **三楼晾衣架** |
+| 8 | 舵机3 | 门锁 | 阳台门 | **三楼遮雨棚** |
 
 ---
 
@@ -286,10 +289,10 @@ typedef struct {
 |----------|----------|
 | "救命" / "救救我" / " SOS" | ESP-NOW向三楼发送0x03命令 → ASR PRO播报求救语音 |
 
-### 9.4 雨天收衣服场景 (`Iot_Mcp_Scenario_Rain_Collect_Clothes`)
+### 9.4 雨天遮雨场景 (`Iot_Mcp_Scenario_Rain_Deploy_Shelter`)
 | 触发意图 | 执行动作 |
 |----------|----------|
-| "下雨了快收衣服" / "下雨收衣服" | 三楼舵机1(晾衣架)→0° + 所有舵机复位到0° |
+| "下雨了" / "展开遮雨棚" | 庭院遮雨棚舵机→180°，灯带切到雨天冷蓝呼吸 |
 
 ### 9.5 通风场景 (`Iot_Mcp_Scenario_Ventilate`)
 | 触发意图 | 执行动作 |
@@ -318,8 +321,8 @@ typedef struct {
 |---------|----------|----------|
 | 打开天窗 | `Iot_Mcp_Control_Servo_Angle("三楼设备", 0, 180)` | "打开左天窗" |
 | 关闭天窗 | `Iot_Mcp_Control_Servo_Angle("三楼设备", 0, 0)` | "关闭左天窗" |
-| 打开晾衣架 | `Iot_Mcp_Control_Servo_Angle("三楼设备", 2, 180)` | "打开晾衣架" |
-| 收衣服 | `Iot_Mcp_Scenario_Rain_Collect_Clothes()` | "下雨了收衣服" |
+| 展开遮雨棚 | `self.garden.control("rain_shelter", "deploy")` | "展开遮雨棚" |
+| 收回遮雨棚 | `self.garden.control("rain_shelter", "retract")` | "收回遮雨棚" |
 
 ### 10.3 继电器/风扇控制
 | AI 意图 | 调用函数 | 示例话术 |
@@ -341,8 +344,9 @@ typedef struct {
 
 | 日期 | 变更内容 |
 |------|----------|
-| 2026-03-30 | 新增场景化MCP工具(回家/晚安/求救/收衣服/通风) |
-| 2026-03-30 | 三楼舵机重命名:窗户→左天窗,窗帘→右天窗,阳台门→三楼晾衣架 |
+| 2026-05-26 | 庭院舵机语义升级为智能遮雨棚，新增单设备自动接管和灯带校准 |
+| 2026-03-30 | 新增场景化MCP工具(回家/晚安/求救/雨天遮雨/通风) |
+| 2026-03-30 | 三楼舵机重命名:窗户→左天窗,窗帘→右天窗,阳台门→三楼遮雨棚 |
 | 2026-03-30 | ESP-NOW新增0x03求救命令支持，触发ASR PRO求救语音 |
 | 2026-03-29 | 添加三楼传感器(烟雾/雨滴/求助) + ASR UART |
 | 2026-03-29 | ASR UART 从 GPIO43 改为 GPIO17 |

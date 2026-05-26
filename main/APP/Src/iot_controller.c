@@ -150,6 +150,8 @@ static void HW_MQTT_Recv_Callback(const char* topic, int topic_len, const char* 
     if (data_len >= (int)sizeof(iot_command_packet_t)) {
         iot_command_packet_t* cmd = (iot_command_packet_t*)data;
         if (cmd->command == IOT_CMD_HEARTBEAT) {
+            ESP_LOGI(TAG, "Heartbeat received from %02X:%02X:%02X:%02X:%02X:%02X",
+                     src_mac[0], src_mac[1], src_mac[2], src_mac[3], src_mac[4], src_mac[5]);
             IOT_Update_Heartbeat(&g_iot_controller, src_mac);
             return;
         }
@@ -599,13 +601,23 @@ bool App_IOT_Control_Servo_Angle(const char* device_name, uint8_t servo_index, u
     return IOT_Set_Servo(&g_iot_controller, device_index, servo_index, angle);
 }
 
+bool App_IOT_Scenario_Rain_Deploy_Shelter(const char* third_floor_device) {
+    int device_index = IOT_Find_Device_By_Name(&g_iot_controller, third_floor_device);
+    if (device_index < 0) {
+        ESP_LOGW(TAG, "Device '%s' not found", third_floor_device);
+        return false;
+    }
+    ESP_LOGI(TAG, "[SCENARIO] Rain: deploying rain shelter");
+    return IOT_Set_Servo(&g_iot_controller, device_index, 0, 180);
+}
+
 bool App_IOT_Scenario_Rain_Collect_Clothes(const char* third_floor_device) {
     int device_index = IOT_Find_Device_By_Name(&g_iot_controller, third_floor_device);
     if (device_index < 0) {
         ESP_LOGW(TAG, "Device '%s' not found", third_floor_device);
         return false;
     }
-    ESP_LOGI(TAG, "[SCENARIO] Rain: collecting clothes, closing all servos on 3rd floor");
+    ESP_LOGI(TAG, "[SCENARIO] Rain legacy: retracting all servos on 3rd floor");
     bool success = true;
     for (int i = 0; i < 3; i++) {
         if (!IOT_Set_Servo(&g_iot_controller, device_index, i, 0)) {

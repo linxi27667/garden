@@ -344,9 +344,9 @@ function cardHtml(mac, d) {
     // Servo at gpio_index 6
     const sv = d.gpio_states[6] || 0;
     const hung = sv >= 180;
-    h += `<div class="section"><div class="section-title">📎 晾衣架</div><div class="servo-row">
-      <button class="servo-btn ${hung?'active':''}" onclick="setServo('${mac}',0,180)">📤 晾衣服</button>
-      <button class="servo-btn ${!hung?'active':''}" onclick="setServo('${mac}',0,0)">📥 收衣服</button>
+    h += `<div class="section"><div class="section-title">☔ 智能遮雨棚</div><div class="servo-row">
+      <button class="servo-btn ${hung?'active':''}" onclick="setServo('${mac}',0,180)">展开遮雨</button>
+      <button class="servo-btn ${!hung?'active':''}" onclick="setServo('${mac}',0,0)">收回遮雨棚</button>
     </div></div>`;
   } else {
     // Generic device — show all gpio_states as toggles
@@ -458,7 +458,7 @@ function setServo(mac, i, a) {
   ws.send(JSON.stringify({type:'set_servo',device_id:d.device_id,index:i,angle:a}));
   d.gpio_states[6+i] = a;
   renderAll();
-  toast(a >= 180 ? '晾衣架已伸出' : '晾衣架已收回');
+  toast(a >= 180 ? '遮雨棚已展开' : '遮雨棚已收回');
 }
 
 function scan() { ws.send(JSON.stringify({type:'discover'})); toast('正在扫描...'); }

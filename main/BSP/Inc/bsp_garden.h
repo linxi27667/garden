@@ -11,7 +11,9 @@ typedef enum {
 
 typedef enum {
     GARDEN_SERVO_COLLECT = 0,
-    GARDEN_SERVO_HANG = 1
+    GARDEN_SERVO_HANG = 1,
+    GARDEN_SERVO_RETRACT = GARDEN_SERVO_COLLECT,
+    GARDEN_SERVO_DEPLOY = GARDEN_SERVO_HANG
 } garden_servo_state_t;
 
 typedef enum {
@@ -28,6 +30,7 @@ typedef enum {
 typedef struct {
     uint8_t soil_percent;
     uint16_t rain_adc_mv;
+    uint8_t rain_percent;
     garden_rain_state_t rain_state;
     garden_fire_state_t fire_status;
     uint8_t help_status;
@@ -53,6 +56,10 @@ typedef struct {
     garden_switch_state_t atomizer;
     garden_switch_state_t safety_switch;
     bool auto_mode;
+    bool auto_fan;
+    bool auto_atomizer;
+    bool auto_watering;
+    bool auto_rain_shelter;
     garden_fire_state_t fire_status;
 } garden_device_state_t;
 

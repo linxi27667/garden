@@ -73,7 +73,7 @@ static const SensorAlertScenario kSensorAlertScenarios[] = {
         "rain",
         "雨天提醒",
         "rain",
-        "检测到庭院降雨，已自动收回晾衣架并更新庭院状态。",
+        "检测到庭院降雨，已自动展开遮雨棚并更新庭院状态。",
         3,
         180,
         500,
@@ -608,7 +608,7 @@ public:
             "  device: 从机设备名（如'智慧庭院'）\n"
             "  index: 舵机编号\n"
             "  angle: 角度(0-180)\n"
-            "推荐使用 self.garden.set_servo 代替本工具，用 hang/collect 语义更直观。",
+            "推荐使用 self.garden.control 的 rain_shelter 目标代替本工具，用 deploy/retract 语义更直观。",
             PropertyList({
                 Property("device", kPropertyTypeString),
                 Property("index", kPropertyTypeInteger),
@@ -690,6 +690,70 @@ public:
                 return json;
             });
 #endif
+
+        mcp_server.AddTool("self.iot.get_device_status",
+            "获取所有IoT设备的完整状态，包括连接状态、设备开关状态和传感器数据。\n"
+            "返回每个设备的在线状态、GPIO/灯光/继电器/舵机的当前值，以及温湿度、土壤、雨滴、火焰等传感器数据。\n"
+            "当用户询问'设备状态'、'查看所有设备'、'传感器数据'时使用。",
+            PropertyList(),
+            [](const PropertyList& properties) -> ReturnValue {
+                char status_buf[2048];
+                char sensor_buf[1024];
+                char iot_buf[3072];
+
+                App_Garden_Get_Status_Json(status_buf, sizeof(status_buf));
+                App_Garden_Get_Sensors_Json(sensor_buf, sizeof(sensor_buf));
+                Iot_Mcp_Get_Sensors_Json(iot_buf, sizeof(iot_buf));
+
+                cJSON* json = cJSON_CreateObject();
+                cJSON_AddNumberToObject(json, "device_count", App_IOT_Get_Device_Count());
+
+                cJSON* garden_status = cJSON_Parse(status_buf);
+                if (garden_status) cJSON_AddItemToObject(json, "garden_status", garden_status);
+
+                cJSON* garden_sensors = cJSON_Parse(sensor_buf);
+                if (garden_sensors) cJSON_AddItemToObject(json, "garden_sensors", garden_sensors);
+
+                cJSON* iot_sensors = cJSON_Parse(iot_buf);
+                if (iot_sensors) cJSON_AddItemToObject(json, "iot_sensors", iot_sensors);
+
+                return json;
+            });
+
+        mcp_server.AddTool("self.iot.discover_devices",
+            "发现附近的IoT从机设备并返回设备列表。\n"
+            "发送广播发现命令，等待从机响应后返回当前已知的所有远程设备及其在线状态。\n"
+            "当用户询问'有哪些设备'、'扫描设备'、'发现设备'时使用。",
+            PropertyList(),
+            [](const PropertyList& properties) -> ReturnValue {
+                ESP_LOGI(TAG, "Device discovery triggered via MCP...");
+
+                int before_count = Iot_Mcp_Get_Remote_Device_Count();
+                Iot_Mcp_Discover();
+                vTaskDelay(pdMS_TO_TICKS(3000));
+                int after_count = Iot_Mcp_Get_Remote_Device_Count();
+
+                cJSON* json = cJSON_CreateObject();
+                cJSON_AddBoolToObject(json, "success", true);
+                cJSON_AddNumberToObject(json, "devices_found", after_count);
+                cJSON_AddNumberToObject(json, "newly_discovered", after_count - before_count);
+                cJSON_AddStringToObject(json, "message",
+                    after_count > 0 ? "设备发现完成" : "未发现设备，请确保从机已上电并连接MQTT");
+
+                int total = App_IOT_Get_Device_Count();
+                cJSON* devices = cJSON_AddArrayToObject(json, "devices");
+                for (int i = 0; i < total; i++) {
+                    const char* name = App_IOT_Get_Device_Name(i);
+                    if (name) {
+                        cJSON* dev = cJSON_CreateObject();
+                        cJSON_AddStringToObject(dev, "name", name);
+                        cJSON_AddNumberToObject(dev, "index", i);
+                        cJSON_AddItemToArray(devices, dev);
+                    }
+                }
+
+                return json;
+            });
 
         mcp_server.AddTool("self.alarm.add_timer",
             "设置定时器提醒（X分钟后提醒）。Args: minutes(分钟数), message(提醒内容)。",
@@ -827,7 +891,22 @@ public:
     }
 
     virtual std::string GetDeviceStatusJson() override {
-        return "{}";
+        char status_buf[2048];
+        char sensor_buf[1024];
+        App_Garden_Get_Status_Json(status_buf, sizeof(status_buf));
+        App_Garden_Get_Sensors_Json(sensor_buf, sizeof(sensor_buf));
+
+        cJSON* json = cJSON_CreateObject();
+        cJSON* garden_status = cJSON_Parse(status_buf);
+        if (garden_status) cJSON_AddItemToObject(json, "garden_status", garden_status);
+        cJSON* garden_sensors = cJSON_Parse(sensor_buf);
+        if (garden_sensors) cJSON_AddItemToObject(json, "garden_sensors", garden_sensors);
+
+        char* str = cJSON_PrintUnformatted(json);
+        std::string result(str ? str : "{}");
+        cJSON_free(str);
+        cJSON_Delete(json);
+        return result;
     }
 };
 

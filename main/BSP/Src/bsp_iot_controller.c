@@ -63,7 +63,7 @@ static const char* g_garden_gpio_names[] = {
     "water_pump",
     "atomizer",
     "safety_switch",
-    "clothes_servo"
+    "rain_shelter_servo"
 };
 
 static const char* IOT_Resolve_Alias(const char* name) {
@@ -239,6 +239,10 @@ void IOT_Update_Heartbeat(iot_controller_t* dev, const uint8_t* mac) {
     if (index >= 0) {
         dev->remote_devices[index].online = true;
         dev->remote_devices[index].last_heartbeat_ms = (uint32_t)(esp_timer_get_time() / 1000);
+        ESP_LOGI(TAG, "Heartbeat updated: %s is online", dev->remote_devices[index].device_name);
+    } else {
+        ESP_LOGI(TAG, "Heartbeat from unknown device: %02X:%02X:%02X:%02X:%02X:%02X",
+                 mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
     }
 }
 
@@ -626,8 +630,12 @@ void IOT_Process_Sensor_Data(iot_controller_t* dev, const uint8_t* mac, const ui
             cJSON* item;
             item = cJSON_GetObjectItem(root, "soil_mv");
             if (item) s->soil_mv = (uint16_t)item->valueint;
+            item = cJSON_GetObjectItem(root, "soil_percent");
+            if (item) s->soil_percent = (uint8_t)item->valueint;
             item = cJSON_GetObjectItem(root, "rain_mv");
             if (item) s->rain_adc_mv = (uint16_t)item->valueint;
+            item = cJSON_GetObjectItem(root, "rain_percent");
+            if (item) s->rain_percent = (uint8_t)item->valueint;
             item = cJSON_GetObjectItem(root, "fire_status");
             if (item) s->fire_status = (uint8_t)item->valueint;
             item = cJSON_GetObjectItem(root, "rain_status");
@@ -674,12 +682,12 @@ void IOT_Get_Sensors_Json(iot_controller_t* dev, char* buffer, int buffer_size) 
         first = false;
 
         offset += snprintf(buffer + offset, buffer_size - offset,
-            "{\"name\":\"%s\",\"online\":%s,\"soil_mv\":%d,\"rain_adc_mv\":%d,"
+            "{\"name\":\"%s\",\"online\":%s,\"soil_mv\":%d,\"soil_percent\":%d,\"rain_adc_mv\":%d,\"rain_percent\":%d,"
             "\"fire_status\":%d,\"rain_status\":%d,\"help_status\":%d,"
             "\"temperature\":%.1f,\"humidity\":%.1f,\"updated_ms\":%lu}",
             d->device_name,
             d->online ? "true" : "false",
-            s->soil_mv, s->rain_adc_mv,
+            s->soil_mv, s->soil_percent, s->rain_adc_mv, s->rain_percent,
             s->fire_status, s->rain_status, s->help_status,
             s->temperature, s->humidity,
             (unsigned long)s->last_update_ms);

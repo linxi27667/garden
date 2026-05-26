@@ -104,10 +104,27 @@ static bool g_dht_valid = false;
 
 #define AUTO_CTRL_COOLDOWN_MS  30000
 static uint32_t g_relay_manual_time[RELAY_COUNT] = {0};
+static bool g_watering_active = false;
+static uint32_t g_watering_started_ms = 0;
+static uint32_t g_watering_cooldown_until_ms = 0;
 
 void Sensor_ADC_Notify_Relay_Manual(uint8_t relay_index) {
     if (relay_index < RELAY_COUNT) {
         g_relay_manual_time[relay_index] = xTaskGetTickCount() * portTICK_PERIOD_MS;
+        if (relay_index == 0) {
+            g_device_flags.auto_fan = false;
+        } else if (relay_index == 1) {
+            g_device_flags.auto_watering = false;
+            g_watering_active = false;
+        } else if (relay_index == 2) {
+            g_device_flags.auto_atomizer = false;
+        }
+    }
+}
+
+void Sensor_ADC_Notify_Servo_Manual(uint8_t servo_index) {
+    if (servo_index < SERVO_COUNT) {
+        g_device_flags.auto_rain_shelter = false;
     }
 }
 
@@ -123,18 +140,29 @@ static void Sensor_ADC_Task(void* arg) {
         if (soil_percent > 100) soil_percent = 100;
         if (soil_percent < 0) soil_percent = 0;
 
-        uint8_t rain_wet = (rain_mv <= RAIN_THRESHOLD_MV) ? 1 : 0;
+        int32_t rain_percent = 100 - (rain_mv * 100) / 3100;
+        if (rain_percent > 100) rain_percent = 100;
+        if (rain_percent < 0) rain_percent = 0;
+
+        uint8_t rain_wet = (rain_percent > RAIN_THRESHOLD_PERCENT) ? 1 : 0;
 
         if (rain_wet) {
             if (g_rain_exceed_count < RAIN_TRIGGER_COUNT + 10) {
                 g_rain_exceed_count++;
             }
             if (g_rain_exceed_count >= RAIN_TRIGGER_COUNT) {
-                if (g_device_flags.auto_mode) {
+                if (g_device_flags.auto_mode && g_device_flags.auto_rain_shelter) {
                     DEVICE_FLAGS_LOCK();
-                    if (g_device_flags.servo[0] != SERVO_MIN_ANGLE) {
-                        ESP_LOGI(TAG, "[RAIN] Auto collecting clothes");
-                        g_device_flags.servo[0] = SERVO_MIN_ANGLE;
+                    if (g_device_flags.servo[0] != SERVO_MAX_ANGLE) {
+                        ESP_LOGI(TAG, "[RAIN] Auto deploying rain shelter");
+                        g_device_flags.servo[0] = SERVO_MAX_ANGLE;
+                        g_device_flags.light[1] = SWITCH_ON;
+                        g_device_flags.strip_red = 70;
+                        g_device_flags.strip_green = 120;
+                        g_device_flags.strip_blue = 255;
+                        g_device_flags.strip_brightness = 32;
+                        g_device_flags.strip_effect = IOT_STRIP_EFFECT_BREATHE;
+                        g_device_flags.ambience_scene = IOT_AMBIENCE_SCENE_RAIN;
                         xTaskNotify(s_iot_ctrl_task_handle, NOTIFY_RAIN_BIT, eSetBits);
                     }
                     DEVICE_FLAGS_UNLOCK();
@@ -146,34 +174,85 @@ static void Sensor_ADC_Task(void* arg) {
 
         g_dht_valid = DHT11_Read(DHT_PIN, &g_temperature, &g_humidity);
 
+        if (g_device_flags.auto_mode && g_device_flags.auto_watering && g_device_flags.fire_status != FIRE_CONFIRMED) {
+            uint32_t now_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+            DEVICE_FLAGS_LOCK();
+            if (rain_wet) {
+                if (g_device_flags.relay[1] == SWITCH_ON) {
+                    g_device_flags.relay[1] = SWITCH_OFF;
+                }
+                g_watering_active = false;
+                g_watering_cooldown_until_ms = now_ms + WATER_PUMP_COOLDOWN_MS;
+            } else if (g_watering_active) {
+                bool wet_enough = soil_percent >= SOIL_WATER_STOP_PERCENT;
+                bool timed_out = (now_ms - g_watering_started_ms) >= WATER_PUMP_MAX_RUN_MS;
+                if (wet_enough || timed_out) {
+                    g_device_flags.relay[1] = SWITCH_OFF;
+                    g_watering_active = false;
+                    g_watering_cooldown_until_ms = now_ms + WATER_PUMP_COOLDOWN_MS;
+                    ESP_LOGI(TAG, "[SOIL] Auto watering stopped: soil=%d%% timeout=%d",
+                             (int)soil_percent, timed_out ? 1 : 0);
+                }
+            } else if (soil_percent < SOIL_WATER_START_PERCENT &&
+                       now_ms >= g_watering_cooldown_until_ms) {
+                g_device_flags.relay[1] = SWITCH_ON;
+                g_watering_active = true;
+                g_watering_started_ms = now_ms;
+                ESP_LOGI(TAG, "[SOIL] Auto watering started: soil=%d%%", (int)soil_percent);
+            }
+            DEVICE_FLAGS_UNLOCK();
+        }
+
         if (g_device_flags.auto_mode && g_dht_valid) {
             uint32_t now_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
             DEVICE_FLAGS_LOCK();
             if (g_temperature > -40.0f && g_temperature < 80.0f) {
-                if (g_temperature > 35.0f) {
-                    if ((now_ms - g_relay_manual_time[0]) >= AUTO_CTRL_COOLDOWN_MS) {
+                if (g_temperature >= TEMP_COOLING_ON_C) {
+                    if (g_device_flags.auto_fan &&
+                        (now_ms - g_relay_manual_time[0]) >= AUTO_CTRL_COOLDOWN_MS) {
                         if (g_device_flags.relay[0] == SWITCH_OFF) g_device_flags.relay[0] = SWITCH_ON;
                     }
-                    if ((now_ms - g_relay_manual_time[2]) >= AUTO_CTRL_COOLDOWN_MS) {
+                    if (g_device_flags.auto_atomizer &&
+                        (now_ms - g_relay_manual_time[2]) >= AUTO_CTRL_COOLDOWN_MS) {
                         if (g_device_flags.relay[2] == SWITCH_OFF) g_device_flags.relay[2] = SWITCH_ON;
                     }
-                } else if (g_temperature < 10.0f) {
-                    if ((now_ms - g_relay_manual_time[0]) >= AUTO_CTRL_COOLDOWN_MS) {
+                } else if (g_temperature <= TEMP_COOLING_OFF_C) {
+                    if (g_device_flags.auto_fan &&
+                        (now_ms - g_relay_manual_time[0]) >= AUTO_CTRL_COOLDOWN_MS &&
+                        g_humidity <= HUMIDITY_FAN_OFF_PERCENT) {
                         if (g_device_flags.relay[0] == SWITCH_ON) g_device_flags.relay[0] = SWITCH_OFF;
                     }
-                    if ((now_ms - g_relay_manual_time[2]) >= AUTO_CTRL_COOLDOWN_MS) {
-                        if (g_device_flags.relay[2] == SWITCH_ON && g_humidity > 40.0f) g_device_flags.relay[2] = SWITCH_OFF;
+                    if (g_device_flags.auto_atomizer &&
+                        (now_ms - g_relay_manual_time[2]) >= AUTO_CTRL_COOLDOWN_MS &&
+                        g_humidity >= HUMIDITY_DRY_OFF_PERCENT) {
+                        if (g_device_flags.relay[2] == SWITCH_ON) g_device_flags.relay[2] = SWITCH_OFF;
                     }
                 }
             }
             if (g_humidity > 0.0f && g_humidity < 100.0f) {
-                if (g_humidity < 20.0f) {
-                    if ((now_ms - g_relay_manual_time[2]) >= AUTO_CTRL_COOLDOWN_MS) {
+                if (g_humidity <= HUMIDITY_DRY_ON_PERCENT) {
+                    if (g_device_flags.auto_atomizer &&
+                        (now_ms - g_relay_manual_time[2]) >= AUTO_CTRL_COOLDOWN_MS) {
                         if (g_device_flags.relay[2] == SWITCH_OFF) g_device_flags.relay[2] = SWITCH_ON;
                     }
-                } else if (g_humidity > 80.0f) {
-                    if ((now_ms - g_relay_manual_time[0]) >= AUTO_CTRL_COOLDOWN_MS) {
+                } else if (g_humidity >= HUMIDITY_DRY_OFF_PERCENT &&
+                           g_temperature < TEMP_COOLING_ON_C) {
+                    if (g_device_flags.auto_atomizer &&
+                        (now_ms - g_relay_manual_time[2]) >= AUTO_CTRL_COOLDOWN_MS) {
+                        if (g_device_flags.relay[2] == SWITCH_ON) g_device_flags.relay[2] = SWITCH_OFF;
+                    }
+                }
+
+                if (g_humidity >= HUMIDITY_FAN_ON_PERCENT) {
+                    if (g_device_flags.auto_fan &&
+                        (now_ms - g_relay_manual_time[0]) >= AUTO_CTRL_COOLDOWN_MS) {
                         if (g_device_flags.relay[0] == SWITCH_OFF) g_device_flags.relay[0] = SWITCH_ON;
+                    }
+                } else if (g_humidity <= HUMIDITY_FAN_OFF_PERCENT &&
+                           g_temperature < TEMP_COOLING_ON_C) {
+                    if (g_device_flags.auto_fan &&
+                        (now_ms - g_relay_manual_time[0]) >= AUTO_CTRL_COOLDOWN_MS) {
+                        if (g_device_flags.relay[0] == SWITCH_ON) g_device_flags.relay[0] = SWITCH_OFF;
                     }
                 }
             }
@@ -192,12 +271,13 @@ static void Sensor_ADC_Task(void* arg) {
                 char topic[64];
                 snprintf(topic, sizeof(topic), MQTT_TOPIC_SENSOR_PREFIX "%s", mac);
 
-                char payload[320];
+                char payload[384];
                 int len = snprintf(payload, sizeof(payload),
-                    "{\"soil_mv\":%d,\"rain_mv\":%d,\"fire_status\":%d,"
+                    "{\"soil_mv\":%d,\"soil_percent\":%d,\"rain_mv\":%d,\"rain_percent\":%d,\"fire_status\":%d,"
                     "\"rain_status\":%d,\"help_status\":%d,"
                     "\"temperature\":%.1f,\"humidity\":%.1f}",
-                    (int)soil_mv, (int)rain_mv,
+                    (int)soil_mv, (int)soil_percent,
+                    (int)rain_mv, (int)rain_percent,
                     (int)g_device_flags.fire_status,
                     rain_wet, g_help_detected ? 1 : 0,
                     g_temperature, g_humidity);
@@ -211,9 +291,9 @@ static void Sensor_ADC_Task(void* arg) {
                     ESP_LOGW(TAG, "MQTT not connected, sensor report skipped");
                 }
             }
-            ESP_LOGD(TAG, "Soil:%dmV(%d%%) Rain:%dmV(%s) Fire:%d Help:%d Temp:%.1f Hum:%.1f",
+            ESP_LOGD(TAG, "Soil:%dmV(%d%%) Rain:%dmV(%d%%) Fire:%d Help:%d Temp:%.1f Hum:%.1f",
                      (int)soil_mv, (int)soil_percent,
-                     (int)rain_mv, rain_wet ? "WET" : "DRY", fire_status, help_status,
+                     (int)rain_mv, (int)rain_percent, fire_status, help_status,
                      g_temperature, g_humidity);
             last_report = now;
         }

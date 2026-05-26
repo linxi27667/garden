@@ -23,6 +23,7 @@ void App_Garden_Set_Veg_Light(garden_switch_state_t state);
 void App_Garden_Set_Fan(garden_switch_state_t state);
 void App_Garden_Set_Servo(garden_servo_state_t state);
 void App_Garden_Set_Auto_Mode(bool enable);
+bool App_Garden_Set_Device_Auto(const char* target, bool enable);
 
 void App_Garden_Set_Water_Pump(garden_switch_state_t state);
 void App_Garden_Set_Atomizer(garden_switch_state_t state);
@@ -34,6 +35,7 @@ void App_Garden_All_Devices_On(void);
 void App_Garden_All_Devices_Off(void);
 
 void App_Garden_Fire_Emergency_Response(void);
+void App_Garden_Fire_Reset(void);
 
 void App_Garden_Get_Status_Json(char* buffer, int buffer_size);
 void App_Garden_Get_Sensors_Json(char* buffer, int buffer_size);
