@@ -101,39 +101,45 @@ static bool Send_Strip_RGB_Command(uint8_t red, uint8_t green, uint8_t blue,
 static uint8_t Garden_Scene_Id_From_Name(const char* scene) {
     if (scene == NULL) return IOT_AMBIENCE_SCENE_CUSTOM;
     if (strcmp(scene, "normal") == 0 || strcmp(scene, "default") == 0 ||
-        strcmp(scene, "恢复正常") == 0 || strcmp(scene, "正常") == 0) {
+        strcmp(scene, "恢复正常") == 0 || strcmp(scene, "正常") == 0 ||
+        strcmp(scene, "风和日丽") == 0) {
         return IOT_AMBIENCE_SCENE_NORMAL;
     }
-    if (strcmp(scene, "night") == 0 || strcmp(scene, "夜间") == 0 || strcmp(scene, "夜间模式") == 0) {
+    if (strcmp(scene, "night") == 0 || strcmp(scene, "夜间") == 0 || strcmp(scene, "夜间模式") == 0 ||
+        strcmp(scene, "月白风清") == 0) {
         return IOT_AMBIENCE_SCENE_NIGHT;
     }
-    if (strcmp(scene, "hot") == 0 || strcmp(scene, "cool") == 0 || strcmp(scene, "闷热") == 0 || strcmp(scene, "降温") == 0) {
+    if (strcmp(scene, "hot") == 0 || strcmp(scene, "cool") == 0 || strcmp(scene, "闷热") == 0 || strcmp(scene, "降温") == 0 ||
+        strcmp(scene, "清风徐来") == 0) {
         return IOT_AMBIENCE_SCENE_HOT;
     }
-    if (strcmp(scene, "relax") == 0 || strcmp(scene, "休闲") == 0 || strcmp(scene, "放松") == 0) {
+    if (strcmp(scene, "relax") == 0 || strcmp(scene, "休闲") == 0 || strcmp(scene, "放松") == 0 ||
+        strcmp(scene, "闲庭信步") == 0) {
         return IOT_AMBIENCE_SCENE_RELAX;
     }
-    if (strcmp(scene, "party") == 0 || strcmp(scene, "聚会") == 0 || strcmp(scene, "节日") == 0) {
-        return IOT_AMBIENCE_SCENE_PARTY;
-    }
-    if (strcmp(scene, "rain") == 0 || strcmp(scene, "雨天") == 0) {
+    if (strcmp(scene, "rain") == 0 || strcmp(scene, "雨天") == 0 ||
+        strcmp(scene, "烟雨朦胧") == 0) {
         return IOT_AMBIENCE_SCENE_RAIN;
     }
     if (strcmp(scene, "safe") == 0 || strcmp(scene, "security") == 0 || strcmp(scene, "安全") == 0) {
         return IOT_AMBIENCE_SCENE_SAFE;
+    }
+    if (strcmp(scene, "eco") == 0 || strcmp(scene, "low_power") == 0 || strcmp(scene, "节能") == 0 || strcmp(scene, "低功耗") == 0 ||
+        strcmp(scene, "万籁俱寂") == 0) {
+        return IOT_AMBIENCE_SCENE_ECO;
     }
     return IOT_AMBIENCE_SCENE_CUSTOM;
 }
 
 static const char* Garden_Scene_Name_From_Id(uint8_t scene_id) {
     switch (scene_id) {
-    case IOT_AMBIENCE_SCENE_NORMAL: return "normal";
-    case IOT_AMBIENCE_SCENE_NIGHT: return "night";
-    case IOT_AMBIENCE_SCENE_HOT: return "hot";
-    case IOT_AMBIENCE_SCENE_RELAX: return "relax";
-    case IOT_AMBIENCE_SCENE_PARTY: return "party";
-    case IOT_AMBIENCE_SCENE_RAIN: return "rain";
-    case IOT_AMBIENCE_SCENE_SAFE: return "safe";
+    case IOT_AMBIENCE_SCENE_NORMAL: return "风和日丽";
+    case IOT_AMBIENCE_SCENE_NIGHT: return "月白风清";
+    case IOT_AMBIENCE_SCENE_HOT: return "清风徐来";
+    case IOT_AMBIENCE_SCENE_RELAX: return "闲庭信步";
+    case IOT_AMBIENCE_SCENE_RAIN: return "烟雨朦胧";
+    case IOT_AMBIENCE_SCENE_SAFE: return "安全警戒";
+    case IOT_AMBIENCE_SCENE_ECO: return "万籁俱寂";
     case IOT_AMBIENCE_SCENE_CUSTOM:
     default:
         return "custom";
@@ -281,6 +287,12 @@ static void Garden_Sensor_Callback(const char* topic, const char* data, int data
             item = cJSON_GetObjectItem(root, "humidity");
             if (item) g_sensor_data.humidity = (float)item->valuedouble;
             cJSON_Delete(root);
+
+            char buf[768];
+            App_Garden_Get_Sensors_Json(buf, sizeof(buf));
+            App_IOT_MQTT_Publish(GARDEN_MQTT_TOPIC_SENSORS, buf, strlen(buf));
+            App_Garden_Get_Status_Json(buf, sizeof(buf));
+            App_IOT_MQTT_Publish(GARDEN_MQTT_TOPIC_STATUS, buf, strlen(buf));
         }
         return;
     }
@@ -292,7 +304,7 @@ static void Garden_Sensor_Callback(const char* topic, const char* data, int data
             switch (pkt->gpio_index) {
                 case IOT_SENSOR_SOIL_MV: {
                     uint16_t mv = pkt->value | (pkt->reserved[0] << 8);
-                    g_sensor_data.soil_percent = (mv * 100) / 3100;
+                    g_sensor_data.soil_percent = 100 - (mv * 100) / 3100;
                     if (g_sensor_data.soil_percent > 100) g_sensor_data.soil_percent = 100;
                     break;
                 }
@@ -334,11 +346,11 @@ void App_Garden_Init(void) {
         .water_pump = GARDEN_SWITCH_OFF,
         .atomizer = GARDEN_SWITCH_OFF,
         .safety_switch = GARDEN_SWITCH_ON,
-        .auto_mode = true,
-        .auto_fan = true,
-        .auto_atomizer = true,
-        .auto_watering = true,
-        .auto_rain_shelter = true,
+        .auto_mode = false,
+        .auto_fan = false,
+        .auto_atomizer = false,
+        .auto_watering = false,
+        .auto_rain_shelter = false,
         .fire_status = GARDEN_FIRE_NORMAL,
     };
     g_actual_state = g_expected_state;
@@ -405,33 +417,47 @@ bool App_Garden_Set_Ambience_Scene(const char* scene) {
     uint8_t effect = IOT_STRIP_EFFECT_SOLID;
 
     switch (scene_id) {
-    case IOT_AMBIENCE_SCENE_NORMAL:
-        red = 255; green = 185; blue = 110; brightness = 35; effect = IOT_STRIP_EFFECT_SOLID;
+    case IOT_AMBIENCE_SCENE_NORMAL:  /* 风和日丽 */
+        red = 255; green = 195; blue = 80; brightness = 40; effect = IOT_STRIP_EFFECT_SOLID;
+        App_Garden_Set_Corridor_Light(GARDEN_SWITCH_ON);
+        App_Garden_Set_Strip_Light(GARDEN_SWITCH_ON);
+        App_Garden_Set_Veg_Light(GARDEN_SWITCH_ON);
         break;
-    case IOT_AMBIENCE_SCENE_NIGHT:
-        red = 255; green = 147; blue = 70; brightness = 24; effect = IOT_STRIP_EFFECT_SOLID;
-        App_Garden_Set_Fan(GARDEN_SWITCH_OFF);
-        App_Garden_Set_Atomizer(GARDEN_SWITCH_OFF);
+    case IOT_AMBIENCE_SCENE_NIGHT:   /* 月白风清 */
+        red = 190; green = 200; blue = 235; brightness = 15; effect = IOT_STRIP_EFFECT_SOLID;
+        App_Garden_Set_Corridor_Light(GARDEN_SWITCH_ON);
+        App_Garden_Set_Strip_Light(GARDEN_SWITCH_ON);
+        App_Garden_Set_Veg_Light(GARDEN_SWITCH_ON);
         break;
-    case IOT_AMBIENCE_SCENE_HOT:
-        red = 120; green = 200; blue = 255; brightness = 50; effect = IOT_STRIP_EFFECT_SOLID;
-        App_Garden_Set_Fan(GARDEN_SWITCH_ON);
-        App_Garden_Set_Atomizer(GARDEN_SWITCH_ON);
+    case IOT_AMBIENCE_SCENE_HOT:     /* 清风徐来 */
+        red = 70; green = 185; blue = 250; brightness = 45; effect = IOT_STRIP_EFFECT_BREATHE;
+        App_Garden_Set_Corridor_Light(GARDEN_SWITCH_OFF);
+        App_Garden_Set_Strip_Light(GARDEN_SWITCH_ON);
+        App_Garden_Set_Veg_Light(GARDEN_SWITCH_OFF);
         break;
-    case IOT_AMBIENCE_SCENE_RELAX:
-        red = 90; green = 200; blue = 120; brightness = 40; effect = IOT_STRIP_EFFECT_BREATHE;
+    case IOT_AMBIENCE_SCENE_RELAX:   /* 闲庭信步 */
+        red = 65; green = 210; blue = 95; brightness = 28; effect = IOT_STRIP_EFFECT_BREATHE;
+        App_Garden_Set_Corridor_Light(GARDEN_SWITCH_ON);
+        App_Garden_Set_Strip_Light(GARDEN_SWITCH_ON);
+        App_Garden_Set_Veg_Light(GARDEN_SWITCH_OFF);
         break;
-    case IOT_AMBIENCE_SCENE_PARTY:
-        red = 255; green = 255; blue = 255; brightness = 60; effect = IOT_STRIP_EFFECT_RAINBOW;
+    case IOT_AMBIENCE_SCENE_RAIN:    /* 烟雨朦胧 */
+        red = 50; green = 85; blue = 200; brightness = 25; effect = IOT_STRIP_EFFECT_BREATHE;
+        App_Garden_Set_Corridor_Light(GARDEN_SWITCH_ON);
+        App_Garden_Set_Strip_Light(GARDEN_SWITCH_ON);
+        App_Garden_Set_Veg_Light(GARDEN_SWITCH_ON);
         break;
-    case IOT_AMBIENCE_SCENE_RAIN:
-        red = 70; green = 120; blue = 255; brightness = 32; effect = IOT_STRIP_EFFECT_BREATHE;
-        break;
-    case IOT_AMBIENCE_SCENE_SAFE:
-        red = 240; green = 245; blue = 255; brightness = 70; effect = IOT_STRIP_EFFECT_SOLID;
+    case IOT_AMBIENCE_SCENE_SAFE:    /* 安全警戒 */
+        red = 255; green = 255; blue = 255; brightness = 100; effect = IOT_STRIP_EFFECT_ALERT;
+        App_Garden_All_Lights_On();
         App_Garden_Set_Water_Pump(GARDEN_SWITCH_OFF);
         App_Garden_Set_Atomizer(GARDEN_SWITCH_OFF);
         App_Garden_Set_Safety_Switch(GARDEN_SWITCH_ON);
+        App_Garden_Set_Auto_Mode(false);
+        break;
+    case IOT_AMBIENCE_SCENE_ECO:     /* 万籁俱寂 */
+        red = 0; green = 0; blue = 0; brightness = 0; effect = IOT_STRIP_EFFECT_SOLID;
+        App_Garden_All_Lights_Off();
         break;
     case IOT_AMBIENCE_SCENE_CUSTOM:
     default:
@@ -469,7 +495,7 @@ void App_Garden_Set_Fan(garden_switch_state_t state) {
 void App_Garden_Set_Servo(garden_servo_state_t state) {
     g_expected_state.servo = state;
     g_expected_state.auto_rain_shelter = false;
-    Send_IoT_Command(IOT_CMD_SET_SERVO, SERVO_GPIO_INDEX_BASE, state == GARDEN_SERVO_HANG ? 180 : 0);
+    Send_IoT_Command(IOT_CMD_SET_SERVO, SERVO_GPIO_INDEX_BASE, state == GARDEN_SERVO_HANG ? 90 : 0);
     ESP_LOGI(TAG, "Rain shelter servo: %s (MQTT->slave)", state ? "DEPLOY" : "RETRACT");
 }
 

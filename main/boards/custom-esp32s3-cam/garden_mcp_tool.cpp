@@ -65,7 +65,7 @@ void Register_Garden_Mcp_Tools(void) {
             } else if (target == "fan") {
                 if (Is_On_Action(action)) App_Garden_Set_Fan(GARDEN_SWITCH_ON);
                 else if (Is_Off_Action(action)) App_Garden_Set_Fan(GARDEN_SWITCH_OFF);
-                else return Garden_Control_Result(false, target, action, "风扇只支持 on/off");
+                else return Garden_Control_Result(false, target, action, "通风扇只支持 on/off");
             } else if (target == "water_pump") {
                 if (Is_On_Action(action)) App_Garden_Set_Water_Pump(GARDEN_SWITCH_ON);
                 else if (Is_Off_Action(action)) App_Garden_Set_Water_Pump(GARDEN_SWITCH_OFF);
@@ -149,9 +149,9 @@ void Register_Garden_Mcp_Tools(void) {
         });
 
     mcp_server.AddTool("self.garden.set_ambience_scene",
-        "设置智慧庭院氛围场景，并按场景联动风扇、雾化器、水泵等设备。\n"
+        "设置智慧庭院意境场景（支持四字成语命名）。场景只管灯光氛围，不干预自动模式。\n"
         "Args:\n"
-        "  scene: normal=正常暖白, night=夜间暖白, hot=闷热降温浅蓝并打开风扇/雾化器, relax=休闲呼吸绿, party=彩虹, rain=雨天冷蓝, safe=安全照明\n"
+        "  scene: 风和日丽=暖白全开, 月白风清=月白全开低亮, 清风徐来=冰蓝灯带呼吸, 闲庭信步=柔绿灯带呼吸, 烟雨朦胧=雾蓝灯带呼吸, 安全警戒=纯白闪烁全开, 万籁俱寂=全关\n"
         "用户说恢复正常、夜间模式、有点闷热、放松一下、聚会氛围、雨天氛围、安全照明时优先使用。",
         PropertyList({
             Property("scene", kPropertyTypeString)
@@ -163,7 +163,7 @@ void Register_Garden_Mcp_Tools(void) {
             cJSON* json = cJSON_CreateObject();
             cJSON_AddBoolToObject(json, "success", ok);
             cJSON_AddStringToObject(json, "scene", scene.c_str());
-            cJSON_AddStringToObject(json, "message", ok ? "氛围场景已应用" : "未知氛围场景，可选: normal, night, hot, relax, party, rain, safe");
+            cJSON_AddStringToObject(json, "message", ok ? "意境场景已切换" : "未知意境，可选: 风和日丽/月白风清/清风徐来/闲庭信步/烟雨朦胧/安全警戒/万籁俱寂");
             return json;
         });
 
@@ -188,7 +188,7 @@ void Register_Garden_Mcp_Tools(void) {
 
 #if ENABLE_GARDEN_FINE_GRAINED_MCP_TOOLS
     mcp_server.AddTool("self.garden.set_fan",
-        "控制智慧庭院的风扇开关。\n"
+        "控制智慧庭院的通风扇开关。\n"
         "Args:\n"
         "  value: true=开/false=关",
         PropertyList({
@@ -201,7 +201,7 @@ void Register_Garden_Mcp_Tools(void) {
             cJSON* json = cJSON_CreateObject();
             cJSON_AddBoolToObject(json, "success", true);
             cJSON_AddBoolToObject(json, "value", value);
-            cJSON_AddStringToObject(json, "message", value ? "风扇已打开" : "风扇已关闭");
+            cJSON_AddStringToObject(json, "message", value ? "通风扇已打开" : "通风扇已关闭");
             return json;
         });
 
@@ -339,7 +339,7 @@ void Register_Garden_Mcp_Tools(void) {
 
     mcp_server.AddTool("self.garden.get_status",
         "获取智慧庭院所有设备的状态。\n"
-        "返回西庭灯、庭院灯带、长廊灯、风扇、舵机、水泵、雾化器、安防总闸、火灾状态的实时数据。",
+        "返回西庭灯、庭院灯带、长廊灯、通风扇、舵机、水泵、雾化器、安防总闸、火灾状态的实时数据。",
         PropertyList(),
         [](const PropertyList& properties) -> ReturnValue {
             char buffer[1536];
@@ -371,8 +371,8 @@ void Register_Garden_Mcp_Tools(void) {
 
     mcp_server.AddTool("self.garden.set_auto_mode",
         "设置智慧庭院自动模式。\n"
-        "开启时会一键打开全局自动模式，并恢复风扇、雾化器、自动浇水、遮雨棚四个单设备自动接管。\n"
-        "自动模式下：雨天自动展开遮雨棚、高温自动开风扇/雾化、土壤干燥自动浇水。\n"
+        "开启时会一键打开全局自动模式，并恢复通风扇、雾化器、自动浇水、遮雨棚四个单设备自动接管。\n"
+        "自动模式下：雨天自动展开遮雨棚、高温自动开通风扇/雾化、土壤干燥自动浇水。\n"
         "Args:\n"
         "  enable: true=一键开启全部自动模式/false=关闭全局自动模式",
         PropertyList({
@@ -414,7 +414,7 @@ void Register_Garden_Mcp_Tools(void) {
     mcp_server.AddTool("self.garden.all",
         "一键打开或关闭智慧庭院全部灯光或全部用户设备。\n"
         "Args:\n"
-        "  scope: lights=只控制全部灯光, devices=控制灯光/风扇/水泵/雾化器/遮雨棚等全部用户设备\n"
+        "  scope: lights=只控制全部灯光, devices=控制灯光/通风扇/水泵/雾化器/遮雨棚等全部用户设备\n"
         "  action: on=开启, off=关闭\n"
         "注意：关闭全部设备不会切断安防总闸，安防总闸保持高电平导通；火灾熔断请使用 self.garden.emergency。",
         PropertyList({

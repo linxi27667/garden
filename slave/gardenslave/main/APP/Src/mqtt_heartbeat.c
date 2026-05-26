@@ -22,7 +22,7 @@ void Heartbeat_Task(void* arg) {
         if (client != NULL && mac_str != NULL && MQTT_Is_Connected()) {
             iot_heartbeat_packet_t heartbeat = {
                 .command = IOT_CMD_HEARTBEAT,
-                .device_id = 0,
+                .device_id = 10,
                 .gpio_index = 0,
                 .value = 0,
             };

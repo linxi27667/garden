@@ -98,6 +98,7 @@ static bool DHT11_Read(uint8_t pin, float* temperature, float* humidity) {
 }
 
 static uint16_t g_rain_exceed_count = 0;
+static uint16_t g_rain_clear_count = 0;
 static float g_temperature = 0;
 static float g_humidity = 0;
 static bool g_dht_valid = false;
@@ -136,7 +137,7 @@ static void Sensor_ADC_Task(void* arg) {
         int32_t soil_mv = ADC_Get_Voltage_MV(SOIL_ADC_CHANNEL);
         int32_t rain_mv = ADC_Get_Voltage_MV(RAIN_ADC_CHANNEL);
 
-        int32_t soil_percent = (soil_mv * 100) / 3100;
+        int32_t soil_percent = 100 - (soil_mv * 100) / 3100;
         if (soil_percent > 100) soil_percent = 100;
         if (soil_percent < 0) soil_percent = 0;
 
@@ -147,6 +148,7 @@ static void Sensor_ADC_Task(void* arg) {
         uint8_t rain_wet = (rain_percent > RAIN_THRESHOLD_PERCENT) ? 1 : 0;
 
         if (rain_wet) {
+            g_rain_clear_count = 0;
             if (g_rain_exceed_count < RAIN_TRIGGER_COUNT + 10) {
                 g_rain_exceed_count++;
             }
@@ -170,9 +172,51 @@ static void Sensor_ADC_Task(void* arg) {
             }
         } else {
             g_rain_exceed_count = 0;
+            if (g_rain_clear_count < RAIN_TRIGGER_COUNT + 10) {
+                g_rain_clear_count++;
+            }
+            if (g_rain_clear_count >= RAIN_TRIGGER_COUNT &&
+                g_device_flags.auto_mode && g_device_flags.auto_rain_shelter) {
+                DEVICE_FLAGS_LOCK();
+                if (g_device_flags.servo[0] != SERVO_MIN_ANGLE) {
+                    ESP_LOGI(TAG, "[RAIN] Rain cleared, retracting shelter and restoring normal");
+                    g_device_flags.servo[0] = SERVO_MIN_ANGLE;
+                    g_device_flags.light[1] = SWITCH_OFF;
+                    g_device_flags.strip_red = 255;
+                    g_device_flags.strip_green = 185;
+                    g_device_flags.strip_blue = 110;
+                    g_device_flags.strip_brightness = 35;
+                    g_device_flags.strip_effect = IOT_STRIP_EFFECT_SOLID;
+                    g_device_flags.ambience_scene = IOT_AMBIENCE_SCENE_NORMAL;
+                    xTaskNotify(s_iot_ctrl_task_handle, NOTIFY_RAIN_BIT, eSetBits);
+                }
+                DEVICE_FLAGS_UNLOCK();
+                g_rain_clear_count = 0;
+            }
         }
 
         g_dht_valid = DHT11_Read(DHT_PIN, &g_temperature, &g_humidity);
+        if (!g_dht_valid) {
+            g_temperature = 0;
+            g_humidity = 0;
+        }
+
+        static uint8_t log_tick = 0;
+        if (++log_tick >= 2) {
+            log_tick = 0;
+            if (g_dht_valid) {
+                ESP_LOGI(TAG, "Soil:%dmV(%d%%) Rain:%dmV(%d%%) Fire:%d Help:%d Temp:%.1fC Hum:%.1f%%",
+                         (int)soil_mv, (int)soil_percent,
+                         (int)rain_mv, (int)rain_percent,
+                         (int)g_device_flags.fire_status, g_help_detected ? 1 : 0,
+                         g_temperature, g_humidity);
+            } else {
+                ESP_LOGI(TAG, "Soil:%dmV(%d%%) Rain:%dmV(%d%%) Fire:%d Help:%d Temp:N/A Hum:N/A",
+                         (int)soil_mv, (int)soil_percent,
+                         (int)rain_mv, (int)rain_percent,
+                         (int)g_device_flags.fire_status, g_help_detected ? 1 : 0);
+            }
+        }
 
         if (g_device_flags.auto_mode && g_device_flags.auto_watering && g_device_flags.fire_status != FIRE_CONFIRMED) {
             uint32_t now_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
@@ -185,7 +229,7 @@ static void Sensor_ADC_Task(void* arg) {
                 g_watering_cooldown_until_ms = now_ms + WATER_PUMP_COOLDOWN_MS;
             } else if (g_watering_active) {
                 bool wet_enough = soil_percent >= SOIL_WATER_STOP_PERCENT;
-                bool timed_out = (now_ms - g_watering_started_ms) >= WATER_PUMP_MAX_RUN_MS;
+                bool timed_out = (WATER_PUMP_MAX_RUN_MS > 0) && ((now_ms - g_watering_started_ms) >= WATER_PUMP_MAX_RUN_MS);
                 if (wet_enough || timed_out) {
                     g_device_flags.relay[1] = SWITCH_OFF;
                     g_watering_active = false;

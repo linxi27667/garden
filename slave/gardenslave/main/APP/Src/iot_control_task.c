@@ -15,13 +15,15 @@ static const char* TAG = "IOT_CTRL";
 
 TaskHandle_t s_iot_ctrl_task_handle = NULL;
 
+static uint32_t s_fire_suppress_until_ms = 0;
+
 #define LEDC_TIMER              LEDC_TIMER_0
 #define LEDC_MODE               LEDC_LOW_SPEED_MODE
 #define LEDC_DUTY_RES           LEDC_TIMER_14_BIT
 #define LEDC_FREQUENCY          50
 #define SERVO_MIN_PULSEWIDTH_US 500
 #define SERVO_MAX_PULSEWIDTH_US 2500
-#define SERVO_MAX_ANGLE         180
+#define SERVO_MAX_ANGLE         90
 
 static ledc_channel_t g_servo_channels[SERVO_COUNT] = {LEDC_CHANNEL_0};
 
@@ -106,11 +108,11 @@ volatile device_flags_enum_t g_device_flags = {
     .relay = {SWITCH_OFF, SWITCH_OFF, SWITCH_OFF, SWITCH_ON},
     .servo = {SERVO_MIN_ANGLE},
     .fire_status = FIRE_NORMAL,
-    .auto_mode = true,
-    .auto_fan = true,
-    .auto_atomizer = true,
-    .auto_watering = true,
-    .auto_rain_shelter = true,
+    .auto_mode = false,
+    .auto_fan = false,
+    .auto_atomizer = false,
+    .auto_watering = false,
+    .auto_rain_shelter = false,
     .strip_red = 255,
     .strip_green = 185,
     .strip_blue = 110,
@@ -264,7 +266,7 @@ static void Device_Refresh_Task(void* arg) {
         HW_Gpio_Init(g_relay_gpios[i]);
         gpio_set_level(g_relay_gpios[i], i == 3 ? 1 : 0);
         ESP_LOGI(TAG, "Relay[%d] -> GPIO%d (%s)", i, g_relay_gpios[i],
-                 i == 0 ? "风扇" : i == 1 ? "水泵" : i == 2 ? "雾化器" : "安防总闸");
+                 i == 0 ? "通风扇" : i == 1 ? "水泵" : i == 2 ? "雾化器" : "安防总闸");
     }
 
     for (int i = 0; i < SERVO_COUNT; i++) {
@@ -305,8 +307,23 @@ static void Device_Refresh_Task(void* arg) {
         xTaskNotifyWait(0, NOTIFY_FIRE_BIT | NOTIFY_HELP_BIT | NOTIFY_RAIN_BIT, &notified_bits, 0);
 
         if (notified_bits & NOTIFY_FIRE_BIT) {
-            ESP_LOGW(TAG, "FIRE DETECTED via GPIO interrupt!");
-            Iot_Fire_Emergency_Response();
+            ESP_LOGW(TAG, "FIRE interrupt triggered, debouncing 100ms...");
+            vTaskDelay(pdMS_TO_TICKS(100));
+            if (gpio_get_level(FIRE_PIN) == 0) {
+                ESP_LOGW(TAG, "FIRE CONFIRMED via GPIO interrupt!");
+                Iot_Fire_Emergency_Response();
+            } else {
+                ESP_LOGW(TAG, "Fire interrupt was noise, suppressing for 10s...");
+                gpio_isr_handler_remove(FIRE_PIN);
+                s_fire_suppress_until_ms = xTaskGetTickCount() * portTICK_PERIOD_MS + 10000;
+            }
+        }
+
+        uint32_t now_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+        if (s_fire_suppress_until_ms != 0 && now_ms >= s_fire_suppress_until_ms) {
+            s_fire_suppress_until_ms = 0;
+            gpio_isr_handler_add(FIRE_PIN, fire_isr_handler, NULL);
+            ESP_LOGI(TAG, "Fire interrupt re-enabled after cooldown");
         }
 
         if (notified_bits & NOTIFY_HELP_BIT) {

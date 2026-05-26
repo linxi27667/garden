@@ -17,7 +17,7 @@ typedef enum {
 
 typedef enum {
      SERVO_MIN_ANGLE = 0,
-     SERVO_MAX_ANGLE = 180
+     SERVO_MAX_ANGLE = 90
 } servo_angle_limit_t;
 
 typedef int16_t servo_angle_t;
@@ -31,7 +31,7 @@ typedef enum {
 #define LIGHT_COURTYARD_WEST_NAME   "西庭灯"
 #define LIGHT_STRIP_NAME            "庭院灯带"
 #define LIGHT_CORRIDOR_LONG_NAME    "长廊灯"
-#define RELAY_FAN_NAME              "风扇"
+#define RELAY_FAN_NAME              "通风扇"
 #define RELAY_WATER_PUMP_NAME       "水泵"
 #define RELAY_ATOMIZER_NAME         "雾化器"
 #define RELAY_SAFETY_SWITCH_NAME    "安防总闸"

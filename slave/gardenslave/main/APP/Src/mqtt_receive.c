@@ -86,66 +86,92 @@ static void Send_Response(uint8_t original_cmd, uint8_t gpio_index, uint8_t valu
     ESP_LOGD(TAG, "Response sent: original=%d, gpio=%d, value=%d", original_cmd, gpio_index, value);
 }
 
+static const char* g_scene_names[] = {
+    "自定义", "月白风清", "清风徐来", "闲庭信步",
+    "烟雨朦胧", "安全警戒", "风和日丽", "万籁俱寂"
+};
+
 static void Apply_Ambience_Scene_Locked(uint8_t scene_id) {
-    g_device_flags.light[1] = SWITCH_ON;
     g_device_flags.ambience_scene = scene_id;
 
+    const char* name = (scene_id < sizeof(g_scene_names) / sizeof(g_scene_names[0]))
+                       ? g_scene_names[scene_id] : "未知";
+    ESP_LOGI(TAG, "=== 意境切换: %s (id=%d) ===", name, (int)scene_id);
+
     switch (scene_id) {
-    case IOT_AMBIENCE_SCENE_NORMAL:
+    case IOT_AMBIENCE_SCENE_NORMAL:  /* 风和日丽 */
+        g_device_flags.light[0] = SWITCH_ON;
+        g_device_flags.light[1] = SWITCH_ON;
+        g_device_flags.light[2] = SWITCH_ON;
         g_device_flags.strip_red = 255;
-        g_device_flags.strip_green = 185;
-        g_device_flags.strip_blue = 110;
-        g_device_flags.strip_brightness = 35;
-        g_device_flags.strip_effect = IOT_STRIP_EFFECT_SOLID;
-        break;
-    case IOT_AMBIENCE_SCENE_NIGHT:
-        g_device_flags.strip_red = 255;
-        g_device_flags.strip_green = 147;
-        g_device_flags.strip_blue = 70;
-        g_device_flags.strip_brightness = 24;
-        g_device_flags.strip_effect = IOT_STRIP_EFFECT_SOLID;
-        g_device_flags.relay[0] = SWITCH_OFF;
-        g_device_flags.relay[2] = SWITCH_OFF;
-        break;
-    case IOT_AMBIENCE_SCENE_HOT:
-        g_device_flags.strip_red = 120;
-        g_device_flags.strip_green = 200;
-        g_device_flags.strip_blue = 255;
-        g_device_flags.strip_brightness = 50;
-        g_device_flags.strip_effect = IOT_STRIP_EFFECT_SOLID;
-        g_device_flags.relay[0] = SWITCH_ON;
-        g_device_flags.relay[2] = SWITCH_ON;
-        break;
-    case IOT_AMBIENCE_SCENE_RELAX:
-        g_device_flags.strip_red = 90;
-        g_device_flags.strip_green = 200;
-        g_device_flags.strip_blue = 120;
+        g_device_flags.strip_green = 195;
+        g_device_flags.strip_blue = 80;
         g_device_flags.strip_brightness = 40;
+        g_device_flags.strip_effect = IOT_STRIP_EFFECT_SOLID;
+        break;
+    case IOT_AMBIENCE_SCENE_NIGHT:   /* 月白风清 */
+        g_device_flags.light[0] = SWITCH_ON;
+        g_device_flags.light[1] = SWITCH_ON;
+        g_device_flags.light[2] = SWITCH_ON;
+        g_device_flags.strip_red = 190;
+        g_device_flags.strip_green = 200;
+        g_device_flags.strip_blue = 235;
+        g_device_flags.strip_brightness = 15;
+        g_device_flags.strip_effect = IOT_STRIP_EFFECT_SOLID;
+        break;
+    case IOT_AMBIENCE_SCENE_HOT:     /* 清风徐来 */
+        g_device_flags.light[0] = SWITCH_OFF;
+        g_device_flags.light[1] = SWITCH_ON;
+        g_device_flags.light[2] = SWITCH_OFF;
+        g_device_flags.strip_red = 70;
+        g_device_flags.strip_green = 185;
+        g_device_flags.strip_blue = 250;
+        g_device_flags.strip_brightness = 45;
         g_device_flags.strip_effect = IOT_STRIP_EFFECT_BREATHE;
         break;
-    case IOT_AMBIENCE_SCENE_PARTY:
+    case IOT_AMBIENCE_SCENE_RELAX:   /* 闲庭信步 */
+        g_device_flags.light[0] = SWITCH_ON;
+        g_device_flags.light[1] = SWITCH_ON;
+        g_device_flags.light[2] = SWITCH_OFF;
+        g_device_flags.strip_red = 65;
+        g_device_flags.strip_green = 210;
+        g_device_flags.strip_blue = 95;
+        g_device_flags.strip_brightness = 28;
+        g_device_flags.strip_effect = IOT_STRIP_EFFECT_BREATHE;
+        break;
+    case IOT_AMBIENCE_SCENE_RAIN:    /* 烟雨朦胧 */
+        g_device_flags.light[0] = SWITCH_ON;
+        g_device_flags.light[1] = SWITCH_ON;
+        g_device_flags.light[2] = SWITCH_ON;
+        g_device_flags.strip_red = 50;
+        g_device_flags.strip_green = 85;
+        g_device_flags.strip_blue = 200;
+        g_device_flags.strip_brightness = 25;
+        g_device_flags.strip_effect = IOT_STRIP_EFFECT_BREATHE;
+        break;
+    case IOT_AMBIENCE_SCENE_SAFE:    /* 安全警戒 */
+        g_device_flags.light[0] = SWITCH_ON;
+        g_device_flags.light[1] = SWITCH_ON;
+        g_device_flags.light[2] = SWITCH_ON;
         g_device_flags.strip_red = 255;
         g_device_flags.strip_green = 255;
         g_device_flags.strip_blue = 255;
-        g_device_flags.strip_brightness = 60;
-        g_device_flags.strip_effect = IOT_STRIP_EFFECT_RAINBOW;
-        break;
-    case IOT_AMBIENCE_SCENE_RAIN:
-        g_device_flags.strip_red = 70;
-        g_device_flags.strip_green = 120;
-        g_device_flags.strip_blue = 255;
-        g_device_flags.strip_brightness = 32;
-        g_device_flags.strip_effect = IOT_STRIP_EFFECT_BREATHE;
-        break;
-    case IOT_AMBIENCE_SCENE_SAFE:
-        g_device_flags.strip_red = 240;
-        g_device_flags.strip_green = 245;
-        g_device_flags.strip_blue = 255;
-        g_device_flags.strip_brightness = 70;
-        g_device_flags.strip_effect = IOT_STRIP_EFFECT_SOLID;
+        g_device_flags.strip_brightness = 100;
+        g_device_flags.strip_effect = IOT_STRIP_EFFECT_ALERT;
         g_device_flags.relay[1] = SWITCH_OFF;
         g_device_flags.relay[2] = SWITCH_OFF;
         g_device_flags.relay[3] = SWITCH_ON;
+        g_device_flags.auto_mode = false;
+        break;
+    case IOT_AMBIENCE_SCENE_ECO:     /* 万籁俱寂 */
+        g_device_flags.light[0] = SWITCH_OFF;
+        g_device_flags.light[1] = SWITCH_OFF;
+        g_device_flags.light[2] = SWITCH_OFF;
+        g_device_flags.strip_red = 0;
+        g_device_flags.strip_green = 0;
+        g_device_flags.strip_blue = 0;
+        g_device_flags.strip_brightness = 0;
+        g_device_flags.strip_effect = IOT_STRIP_EFFECT_SOLID;
         break;
     case IOT_AMBIENCE_SCENE_CUSTOM:
     default:
