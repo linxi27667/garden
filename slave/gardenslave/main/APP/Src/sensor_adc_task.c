@@ -176,19 +176,19 @@ static void Sensor_ADC_Task(void* arg) {
                 g_rain_clear_count++;
             }
             if (g_rain_clear_count >= RAIN_TRIGGER_COUNT &&
-                g_device_flags.auto_mode && g_device_flags.auto_rain_shelter) {
+                g_device_flags.auto_mode && g_device_flags.auto_rain_shelter &&
+                g_device_flags.fire_status != FIRE_CONFIRMED) {
                 DEVICE_FLAGS_LOCK();
                 if (g_device_flags.servo[0] != SERVO_MIN_ANGLE) {
                     ESP_LOGI(TAG, "[RAIN] Rain cleared, retracting shelter and restoring normal");
                     g_device_flags.servo[0] = SERVO_MIN_ANGLE;
                     g_device_flags.light[1] = SWITCH_OFF;
                     g_device_flags.strip_red = 255;
-                    g_device_flags.strip_green = 185;
-                    g_device_flags.strip_blue = 110;
-                    g_device_flags.strip_brightness = 35;
+                    g_device_flags.strip_green = 195;
+                    g_device_flags.strip_blue = 80;
+                    g_device_flags.strip_brightness = 40;
                     g_device_flags.strip_effect = IOT_STRIP_EFFECT_SOLID;
                     g_device_flags.ambience_scene = IOT_AMBIENCE_SCENE_NORMAL;
-                    xTaskNotify(s_iot_ctrl_task_handle, NOTIFY_RAIN_BIT, eSetBits);
                 }
                 DEVICE_FLAGS_UNLOCK();
                 g_rain_clear_count = 0;

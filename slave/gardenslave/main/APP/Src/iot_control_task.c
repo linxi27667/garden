@@ -16,6 +16,7 @@ static const char* TAG = "IOT_CTRL";
 TaskHandle_t s_iot_ctrl_task_handle = NULL;
 
 static uint32_t s_fire_suppress_until_ms = 0;
+static uint32_t s_fire_clear_ms = 0;
 
 #define LEDC_TIMER              LEDC_TIMER_0
 #define LEDC_MODE               LEDC_LOW_SPEED_MODE
@@ -324,6 +325,32 @@ static void Device_Refresh_Task(void* arg) {
             s_fire_suppress_until_ms = 0;
             gpio_isr_handler_add(FIRE_PIN, fire_isr_handler, NULL);
             ESP_LOGI(TAG, "Fire interrupt re-enabled after cooldown");
+        }
+
+        if (g_device_flags.fire_status == FIRE_CONFIRMED) {
+            if (gpio_get_level(FIRE_PIN) == 1) {
+                if (s_fire_clear_ms == 0) {
+                    s_fire_clear_ms = now_ms;
+                } else if (now_ms - s_fire_clear_ms >= 5000) {
+                    ESP_LOGI(TAG, "=== FIRE AUTO-RESET: sensor clear for 5s ===");
+                    DEVICE_FLAGS_LOCK();
+                    g_device_flags.fire_status = FIRE_NORMAL;
+                    g_device_flags.relay[3] = SWITCH_ON;
+                    g_device_flags.strip_red = 255;
+                    g_device_flags.strip_green = 195;
+                    g_device_flags.strip_blue = 80;
+                    g_device_flags.strip_brightness = 40;
+                    g_device_flags.strip_effect = IOT_STRIP_EFFECT_SOLID;
+                    g_device_flags.ambience_scene = IOT_AMBIENCE_SCENE_NORMAL;
+                    g_device_flags.light[0] = SWITCH_ON;
+                    g_device_flags.light[1] = SWITCH_ON;
+                    g_device_flags.light[2] = SWITCH_ON;
+                    DEVICE_FLAGS_UNLOCK();
+                    s_fire_clear_ms = 0;
+                }
+            } else {
+                s_fire_clear_ms = 0;
+            }
         }
 
         if (notified_bits & NOTIFY_HELP_BIT) {
