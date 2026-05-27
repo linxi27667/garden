@@ -226,7 +226,7 @@ static void Garden_Update_Actual_By_Gpio(uint8_t gpio_index, uint8_t value, uint
             g_actual_state.safety_switch = value ? GARDEN_SWITCH_ON : GARDEN_SWITCH_OFF;
             break;
         case 7:
-            g_actual_state.servo = (value >= 90) ? GARDEN_SERVO_HANG : GARDEN_SERVO_COLLECT;
+            g_actual_state.servo = (value >= 45) ? GARDEN_SERVO_HANG : GARDEN_SERVO_COLLECT;
             if (original_cmd == IOT_CMD_SET_SERVO || original_cmd == IOT_CMD_SET_GPIO) {
                 g_actual_state.auto_rain_shelter = false;
             }

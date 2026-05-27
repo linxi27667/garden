@@ -20,8 +20,8 @@
 | 土壤湿度自动浇水 | 已实现 | 干燥启动水泵，湿润停止（无超时限制） |
 | DHT11 温湿度调节 | 已实现 | 高温开通风扇/雾化，温湿度回落后自动关闭 |
 | 雨滴遮雨棚联动 | 已实现 | 降雨展开遮雨棚(90°)+切雨天灯效，雨停自动收回+恢复正常 |
-| 火灾本地熔断 | 已实现 | 从机中断触发，100ms消抖+10s风暴抑制，低电平切断安防总闸 |
-| 火灾解除恢复 | 已实现 | 恢复安防总闸高电平导通，灯带恢复正常暖白 |
+| 火灾本地熔断 | 已实现 | 从机 ADC 电压阈值轮询，连续3次超阈值(1.5s)即触发，抗EMI干扰 |
+| 火灾解除恢复 | 已实现 | 火源移除后电压回稳，连续15s低于阈值自动恢复风和日丽 |
 | 求助告警 | 已实现 | 求助按钮触发照明、MQTT emergency 和主机播报 |
 | Web 控制面板 | 已实现 | `web/index.html` MQTT.js 直连，`web/control-panel` WebSocket 面板 |
 
@@ -133,7 +133,7 @@ web/
 | 安防总闸 | `safety_switch` | GPIO17 | 继电器 CH3 | 高电平导通，低电平火灾切断 |
 | 智能遮雨棚 | `rain_shelter` / `servo` | GPIO18 | LEDC PWM | 0°收回，90°展开 |
 | DHT11 | `temperature` / `humidity` | GPIO38 | 单总线 | 温湿度采集 |
-| 火灾传感器 | `fire_status` | GPIO2 | 下降沿中断 | DO 引脚，触发火灾熔断 |
+| 火灾传感器 | `fire_status` | GPIO2 / ADC1_CH1 | 模拟输入 | AO 引脚，电压越低火越近，阈值轮询检测 |
 | 求助按钮 | `help_status` | GPIO48 | 下降沿中断 | 触发求助告警 |
 | ASR 语音模块 | - | GPIO21 | UART1 TX | 从机本地告警语音模块 |
 
@@ -209,7 +209,9 @@ v3.0 采用中国四字成语命名场景，每个成语都描绘了一幅经典
 | `HUMIDITY_FAN_ON_PERCENT` | 80.0 | 高湿度自动开通风扇除湿 |
 | `HUMIDITY_FAN_OFF_PERCENT` | 70.0 | 湿度回落后关闭通风扇 |
 | `RAIN_THRESHOLD_PERCENT` | 60 | 雨滴百分比超过该值判定为下雨 |
-| `RAIN_TRIGGER_COUNT` | 2 | 连续触发/清除次数，防瞬时误报 |
+| `FIRE_THRESHOLD_PERCENT` | 60 | 火焰百分比超过该值判定为火灾 |
+| `FIRE_THRESHOLD_SAMPLES` | 3 | 连续超阈值次数(×500ms=1.5s)，防瞬时误报 |
+| `FIRE_CLEAR_TIME_MS` | 15000 | 火灾解除后低于阈值持续时间 |
 
 ### 优先级规则
 
@@ -233,24 +235,33 @@ v3.0 采用中国四字成语命名场景，每个成语都描绘了一幅经典
 
 ### 火灾熔断
 
+采用 **ADC 电压阈值轮询** 替代传统中断模式，从根本上杜绝继电器 EMI 误报。
+
 触发链路：
 
 ```text
-火灾传感器 GPIO2 下降沿
-  -> 从机 ISR 通知 iot_ctrl
-  -> 100ms 消抖确认（防止继电器干扰）
+火焰传感器 AO -> GPIO2(ADC1_CH1) 每 500ms 采样
+  -> 电压下降 = 火焰靠近（百分比上升）
+  -> fire_percent > FIRE_THRESHOLD_PERCENT(60%) 连续 3 次(1.5s)
   -> fire_status = FIRE_CONFIRMED
   -> GPIO17 = 0，安防总闸切断
   -> 水泵/雾化器关闭
   -> 三路照明打开
   -> WS2812B 红色警示闪烁
-  -> 发布 xiaozhi/iot/emergency/{mac}
+  -> 发布 xiaozhi/iot/emergency/{mac} + xiaozhi/iot/status/{mac}(场景=安全警戒)
   -> 主机 TTS 播报 + 蜂鸣器报警
 ```
 
-噪声保护：100ms 延时确认 + 10 秒中断抑制冷却，防止继电器产生的 EMI 引发中断风暴。
+自动解除：
 
-解除：`self.garden.fire_reset()` — 恢复总闸高电平，灯带恢复风和日丽。
+```text
+火焰移开 -> 电压回升 -> fire_percent <= 60% 持续 15 秒
+  -> 自动恢复安防总闸导通、灯带风和日丽、发布场景通知
+```
+
+阈值配置见 `slave/gardenslave/main/APP/Inc/sensor_config.h`：`FIRE_THRESHOLD_PERCENT` 和 `FIRE_THRESHOLD_SAMPLES`。
+
+手动解除：`self.garden.fire_reset()` — 恢复总闸高电平，灯带恢复风和日丽。
 
 ### 求助
 
@@ -319,6 +330,7 @@ Topic：
 | `xiaozhi/iot/announce/{mac}` | 从机 -> 主机/Web/App | 二进制 | 上线声明，device_id=10 |
 | `xiaozhi/iot/sensor/{mac}` | 从机 -> 主机/Web | JSON 或二进制 | 传感器状态 |
 | `xiaozhi/iot/emergency/{mac}` | 从机 -> 主机/Web | JSON | 火灾、求助、雨天事件 |
+| `xiaozhi/iot/status/{mac}` | 从机 -> 主机/Web/App | JSON | 场景切换通知 |
 | `xiaozhi/garden/cmd` | Web/App -> 主机 | JSON | 高层庭院命令 |
 | `xiaozhi/garden/status` | 主机 -> Web/App | JSON | 聚合设备状态 |
 | `xiaozhi/garden/sensors` | 主机 -> Web/App | JSON | 聚合传感器状态 |
@@ -521,7 +533,14 @@ Topic：`xiaozhi/garden/sensors`
 
 ```json
 {"soil_mv":1450,"soil_percent":48,"rain_mv":2600,"rain_percent":12,
- "fire_status":0,"rain_status":0,"help_status":0,"temperature":26.5,"humidity":58.0}
+ "fire_mv":1950,"fire_percent":38,"fire_status":0,
+ "rain_status":0,"help_status":0,"temperature":26.5,"humidity":58.0}
+```
+
+场景切换通知（实时）：
+
+```json
+{"type":"scene","scene_id":6,"scene_name":"风和日丽"}
 ```
 
 ## 构建与烧录
@@ -570,7 +589,7 @@ cd slave/gardenslave
 - **成语意境系统**：用中国古典四字成语命名庭院场景，每个都有诗文出处和美学意境。
 - **语音唤醒意境**：说成语就能切换庭院氛围，小智以成语应答，文化科技融合。
 - **完整闭环**：自然语言 → MCP → MQTT → 从机执行器，端到端低延迟。
-- **火灾安全本地闭环**：100ms 消抖 + 10s 风暴抑制，不依赖网络和主机。
+- **火灾安全本地闭环**：ADC 电压阈值轮询，抗继电器 EMI 干扰，不依赖网络和主机。
 - **智能遮雨棚**：下雨自动展开 90°，雨停自动收回 0°并恢复正常场景。
 - **多传感器联动**：土壤+水泵、温湿度+通风扇/雾化器、雨滴+舵机，六大传感器协同。
 - **MQTT 统一总线**：Topic 和 JSON 接口已能支撑后续 App 或云端平台接入。

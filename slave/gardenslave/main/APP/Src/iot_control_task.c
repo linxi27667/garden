@@ -15,16 +15,13 @@ static const char* TAG = "IOT_CTRL";
 
 TaskHandle_t s_iot_ctrl_task_handle = NULL;
 
-static uint32_t s_fire_suppress_until_ms = 0;
-static uint32_t s_fire_clear_ms = 0;
-
 #define LEDC_TIMER              LEDC_TIMER_0
 #define LEDC_MODE               LEDC_LOW_SPEED_MODE
 #define LEDC_DUTY_RES           LEDC_TIMER_14_BIT
 #define LEDC_FREQUENCY          50
 #define SERVO_MIN_PULSEWIDTH_US 500
 #define SERVO_MAX_PULSEWIDTH_US 2500
-#define SERVO_MAX_ANGLE         90
+#define SERVO_PWM_MAX_DEG        180
 
 static ledc_channel_t g_servo_channels[SERVO_COUNT] = {LEDC_CHANNEL_0};
 
@@ -71,7 +68,7 @@ static void HW_Servo_Set_Angle(ledc_channel_t channel, int16_t angle) {
     if (angle < 0) angle = 0;
 
     float pulse_width = SERVO_MIN_PULSEWIDTH_US +
-        (float)(angle) * (SERVO_MAX_PULSEWIDTH_US - SERVO_MIN_PULSEWIDTH_US) / SERVO_MAX_ANGLE;
+        (float)(angle) * (SERVO_MAX_PULSEWIDTH_US - SERVO_MIN_PULSEWIDTH_US) / SERVO_PWM_MAX_DEG;
 
     uint32_t duty = (uint32_t)((pulse_width * 16384) / 20000);
     ledc_set_duty(LEDC_MODE, channel, duty);
@@ -149,12 +146,6 @@ void Iot_Device_Flags_Unlock(const char* caller) {
     xSemaphoreGive(g_device_flags_mutex);
 }
 
-static void IRAM_ATTR fire_isr_handler(void* arg) {
-    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    xTaskNotifyFromISR(s_iot_ctrl_task_handle, NOTIFY_FIRE_BIT, eSetBits, &xHigherPriorityTaskWoken);
-    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-}
-
 static void IRAM_ATTR help_isr_handler(void* arg) {
     g_help_detected = true;
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
@@ -164,16 +155,6 @@ static void IRAM_ATTR help_isr_handler(void* arg) {
 
 static void Init_Interrupt_Pins(void) {
     gpio_install_isr_service(0);
-
-    gpio_config_t fire_conf = {
-        .pin_bit_mask = (1ULL << FIRE_PIN),
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_ENABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_NEGEDGE,
-    };
-    gpio_config(&fire_conf);
-    gpio_isr_handler_add(FIRE_PIN, fire_isr_handler, NULL);
 
     gpio_config_t help_conf = {
         .pin_bit_mask = (1ULL << HELP_PIN),
@@ -185,7 +166,7 @@ static void Init_Interrupt_Pins(void) {
     gpio_config(&help_conf);
     gpio_isr_handler_add(HELP_PIN, help_isr_handler, NULL);
 
-    ESP_LOGI(TAG, "Interrupt pins initialized: fire=GPIO%d, help=GPIO%d", FIRE_PIN, HELP_PIN);
+    ESP_LOGI(TAG, "Interrupt pins initialized: help=GPIO%d", HELP_PIN);
 }
 
 void Iot_Fire_Emergency_Response(void) {
@@ -209,6 +190,7 @@ void Iot_Fire_Emergency_Response(void) {
     g_device_flags.strip_effect = IOT_STRIP_EFFECT_ALERT;
     g_device_flags.ambience_scene = IOT_AMBIENCE_SCENE_SAFE;
     DEVICE_FLAGS_UNLOCK();
+    MQTT_Publish_Scene(IOT_AMBIENCE_SCENE_SAFE);
 
     if (first_fire_report) {
         MQTT_Publish_Emergency(EMERGENCY_FIRE, "Fire detected by smoke sensor");
@@ -305,53 +287,7 @@ static void Device_Refresh_Task(void* arg) {
         }
 
         uint32_t notified_bits = 0;
-        xTaskNotifyWait(0, NOTIFY_FIRE_BIT | NOTIFY_HELP_BIT | NOTIFY_RAIN_BIT, &notified_bits, 0);
-
-        if (notified_bits & NOTIFY_FIRE_BIT) {
-            ESP_LOGW(TAG, "FIRE interrupt triggered, debouncing 100ms...");
-            vTaskDelay(pdMS_TO_TICKS(100));
-            if (gpio_get_level(FIRE_PIN) == 0) {
-                ESP_LOGW(TAG, "FIRE CONFIRMED via GPIO interrupt!");
-                Iot_Fire_Emergency_Response();
-            } else {
-                ESP_LOGW(TAG, "Fire interrupt was noise, suppressing for 10s...");
-                gpio_isr_handler_remove(FIRE_PIN);
-                s_fire_suppress_until_ms = xTaskGetTickCount() * portTICK_PERIOD_MS + 10000;
-            }
-        }
-
-        uint32_t now_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-        if (s_fire_suppress_until_ms != 0 && now_ms >= s_fire_suppress_until_ms) {
-            s_fire_suppress_until_ms = 0;
-            gpio_isr_handler_add(FIRE_PIN, fire_isr_handler, NULL);
-            ESP_LOGI(TAG, "Fire interrupt re-enabled after cooldown");
-        }
-
-        if (g_device_flags.fire_status == FIRE_CONFIRMED) {
-            if (gpio_get_level(FIRE_PIN) == 1) {
-                if (s_fire_clear_ms == 0) {
-                    s_fire_clear_ms = now_ms;
-                } else if (now_ms - s_fire_clear_ms >= 5000) {
-                    ESP_LOGI(TAG, "=== FIRE AUTO-RESET: sensor clear for 5s ===");
-                    DEVICE_FLAGS_LOCK();
-                    g_device_flags.fire_status = FIRE_NORMAL;
-                    g_device_flags.relay[3] = SWITCH_ON;
-                    g_device_flags.strip_red = 255;
-                    g_device_flags.strip_green = 195;
-                    g_device_flags.strip_blue = 80;
-                    g_device_flags.strip_brightness = 40;
-                    g_device_flags.strip_effect = IOT_STRIP_EFFECT_SOLID;
-                    g_device_flags.ambience_scene = IOT_AMBIENCE_SCENE_NORMAL;
-                    g_device_flags.light[0] = SWITCH_ON;
-                    g_device_flags.light[1] = SWITCH_ON;
-                    g_device_flags.light[2] = SWITCH_ON;
-                    DEVICE_FLAGS_UNLOCK();
-                    s_fire_clear_ms = 0;
-                }
-            } else {
-                s_fire_clear_ms = 0;
-            }
-        }
+        xTaskNotifyWait(0, NOTIFY_HELP_BIT | NOTIFY_RAIN_BIT, &notified_bits, 0);
 
         if (notified_bits & NOTIFY_HELP_BIT) {
             ESP_LOGW(TAG, "HELP button pressed!");

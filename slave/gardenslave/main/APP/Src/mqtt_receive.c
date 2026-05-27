@@ -97,6 +97,7 @@ static void Apply_Ambience_Scene_Locked(uint8_t scene_id) {
     const char* name = (scene_id < sizeof(g_scene_names) / sizeof(g_scene_names[0]))
                        ? g_scene_names[scene_id] : "未知";
     ESP_LOGI(TAG, "=== 意境切换: %s (id=%d) ===", name, (int)scene_id);
+    MQTT_Publish_Scene(scene_id);
 
     switch (scene_id) {
     case IOT_AMBIENCE_SCENE_NORMAL:  /* 风和日丽 */
@@ -254,6 +255,7 @@ static void Process_Command(const iot_command_packet_t* cmd) {
         g_device_flags.strip_effect = cmd->reserved[3];
         g_device_flags.ambience_scene = IOT_AMBIENCE_SCENE_CUSTOM;
         DEVICE_FLAGS_UNLOCK();
+        MQTT_Publish_Scene(IOT_AMBIENCE_SCENE_CUSTOM);
         ESP_LOGI(TAG, "Strip RGB: r=%d g=%d b=%d brightness=%d effect=%d",
                  cmd->reserved[0], cmd->reserved[1], cmd->reserved[2], cmd->value, cmd->reserved[3]);
         Send_Response(IOT_CMD_SET_STRIP_RGB, 1, cmd->value);
@@ -545,6 +547,23 @@ void MQTT_Publish_Emergency(emergency_type_t type, const char* detail) {
 
     int msg_id = esp_mqtt_client_publish(s_mqtt_client, topic, payload, payload_len, 1, 0);
     ESP_LOGI(TAG, "Emergency published: type=%d, topic=%s, msg_id=%d", type, topic, msg_id);
+}
+
+void MQTT_Publish_Scene(uint8_t scene_id) {
+    if (!MQTT_Can_Publish("scene")) return;
+
+    const char* name = (scene_id < sizeof(g_scene_names) / sizeof(g_scene_names[0]))
+                       ? g_scene_names[scene_id] : "未知";
+
+    char topic[64], payload[128];
+    snprintf(topic, sizeof(topic), MQTT_TOPIC_STATUS_PREFIX "%s", s_mac_str);
+    int len = snprintf(payload, sizeof(payload),
+        "{\"type\":\"scene\",\"scene_id\":%d,\"scene_name\":\"%s\"}", scene_id, name);
+
+    if (len > 0 && len < (int)sizeof(payload)) {
+        esp_mqtt_client_publish(s_mqtt_client, topic, payload, len, 0, 0);
+        ESP_LOGI(TAG, "Scene published: %s (id=%d)", name, (int)scene_id);
+    }
 }
 
 esp_mqtt_client_handle_t MQTT_Get_Client(void) {

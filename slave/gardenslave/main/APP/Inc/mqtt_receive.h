@@ -35,5 +35,6 @@ void MQTT_Register_Emergency_Callback(emergency_event_cb_t cb);
  * 将紧急事件发布到MQTT主题 xiaozhi/iot/emergency/<mac>
  */
 void MQTT_Publish_Emergency(emergency_type_t type, const char* detail);
+void MQTT_Publish_Scene(uint8_t scene_id);
 
 #endif

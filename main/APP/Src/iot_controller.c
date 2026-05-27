@@ -518,7 +518,7 @@ bool App_IOT_Scenario_Homecoming(const char* first_floor_device, const char* all
     if (first_floor_device != NULL) {
         int device_index = IOT_Find_Device_By_Name(&g_iot_controller, first_floor_device);
         if (device_index >= 0) {
-            if (!IOT_Set_Servo(&g_iot_controller, device_index, 0, 180)) {
+            if (!IOT_Set_Servo(&g_iot_controller, device_index, 0, 90)) {
                 ESP_LOGW(TAG, "Failed to open door");
                 success = false;
             }
@@ -608,7 +608,7 @@ bool App_IOT_Scenario_Rain_Deploy_Shelter(const char* third_floor_device) {
         return false;
     }
     ESP_LOGI(TAG, "[SCENARIO] Rain: deploying rain shelter");
-    return IOT_Set_Servo(&g_iot_controller, device_index, 0, 180);
+    return IOT_Set_Servo(&g_iot_controller, device_index, 0, 90);
 }
 
 bool App_IOT_Scenario_Rain_Collect_Clothes(const char* third_floor_device) {

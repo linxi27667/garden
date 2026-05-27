@@ -151,7 +151,7 @@ void Register_Garden_Mcp_Tools(void) {
     mcp_server.AddTool("self.garden.set_ambience_scene",
         "设置智慧庭院意境场景（支持四字成语命名）。场景只管灯光氛围，不干预自动模式。\n"
         "Args:\n"
-        "  scene: 风和日丽=暖白全开, 月白风清=月白全开低亮, 清风徐来=冰蓝灯带呼吸, 闲庭信步=柔绿灯带呼吸, 烟雨朦胧=雾蓝灯带呼吸, 安全警戒=纯白闪烁全开, 万籁俱寂=全关\n"
+        "  scene: 风和日丽(正常)=暖白全开, 月白风清(夜间)=月白全开低亮, 清风徐来(闷热)=冰蓝灯带呼吸, 闲庭信步(休闲)=柔绿灯带呼吸, 烟雨朦胧(雨天)=雾蓝灯带呼吸, 安全警戒(安防)=纯白闪烁全开, 万籁俱寂(低功耗/节能)=全关\n"
         "用户说恢复正常、夜间模式、有点闷热、放松一下、聚会氛围、雨天氛围、安全照明时优先使用。",
         PropertyList({
             Property("scene", kPropertyTypeString)
@@ -163,7 +163,7 @@ void Register_Garden_Mcp_Tools(void) {
             cJSON* json = cJSON_CreateObject();
             cJSON_AddBoolToObject(json, "success", ok);
             cJSON_AddStringToObject(json, "scene", scene.c_str());
-            cJSON_AddStringToObject(json, "message", ok ? "意境场景已切换" : "未知意境，可选: 风和日丽/月白风清/清风徐来/闲庭信步/烟雨朦胧/安全警戒/万籁俱寂");
+            cJSON_AddStringToObject(json, "message", ok ? "意境场景已切换" : "未知意境，可选: 风和日丽(正常)/月白风清(夜间)/清风徐来(闷热)/闲庭信步(休闲)/烟雨朦胧(雨天)/安全警戒(安防)/万籁俱寂(低功耗/节能)");
             return json;
         });
 

@@ -18,8 +18,9 @@ static const char* TAG = "SENSOR_ADC";
 static void HW_ADC_Init(void) {
     adc1_config_width(ADC_WIDTH_BIT_12);
     adc1_config_channel_atten(SOIL_ADC_CHANNEL, SOIL_ADC_ATTEN);
+    adc1_config_channel_atten(FIRE_ADC_CHANNEL, FIRE_ADC_ATTEN);
     adc1_config_channel_atten(RAIN_ADC_CHANNEL, RAIN_ADC_ATTEN);
-    ESP_LOGI(TAG, "ADC initialized: Soil=GPIO1(CH0), Rain=GPIO4(CH3)");
+    ESP_LOGI(TAG, "ADC initialized: Soil=CH0, Fire=CH1, Rain=CH3");
 }
 
 static int32_t ADC_Get_Voltage_MV(adc1_channel_t channel) {
@@ -109,6 +110,11 @@ static bool g_watering_active = false;
 static uint32_t g_watering_started_ms = 0;
 static uint32_t g_watering_cooldown_until_ms = 0;
 
+#define FIRE_THRESHOLD_SAMPLES  3
+#define FIRE_CLEAR_TIME_MS      15000
+static uint8_t  g_fire_high_count = 0;
+static uint32_t g_fire_low_since_ms = 0;
+
 void Sensor_ADC_Notify_Relay_Manual(uint8_t relay_index) {
     if (relay_index < RELAY_COUNT) {
         g_relay_manual_time[relay_index] = xTaskGetTickCount() * portTICK_PERIOD_MS;
@@ -135,6 +141,7 @@ static void Sensor_ADC_Task(void* arg) {
 
     while (1) {
         int32_t soil_mv = ADC_Get_Voltage_MV(SOIL_ADC_CHANNEL);
+        int32_t fire_mv = ADC_Get_Voltage_MV(FIRE_ADC_CHANNEL);
         int32_t rain_mv = ADC_Get_Voltage_MV(RAIN_ADC_CHANNEL);
 
         int32_t soil_percent = 100 - (soil_mv * 100) / 3100;
@@ -145,7 +152,53 @@ static void Sensor_ADC_Task(void* arg) {
         if (rain_percent > 100) rain_percent = 100;
         if (rain_percent < 0) rain_percent = 0;
 
+        int32_t fire_percent = 100 - (fire_mv * 100) / 3100;
+        if (fire_percent > 100) fire_percent = 100;
+        if (fire_percent < 0) fire_percent = 0;
+
         uint8_t rain_wet = (rain_percent > RAIN_THRESHOLD_PERCENT) ? 1 : 0;
+
+        if (g_device_flags.fire_status != FIRE_CONFIRMED) {
+            if (fire_percent > FIRE_THRESHOLD_PERCENT) {
+                g_fire_high_count++;
+                if (g_fire_high_count >= FIRE_THRESHOLD_SAMPLES) {
+                    ESP_LOGW(TAG, "[FIRE] Threshold reached: %dmV(%d%%) > %d%% x%d",
+                             (int)fire_mv, (int)fire_percent, FIRE_THRESHOLD_PERCENT, FIRE_THRESHOLD_SAMPLES);
+                    Iot_Fire_Emergency_Response();
+                    g_fire_high_count = 0;
+                    g_fire_low_since_ms = 0;
+                }
+            } else {
+                g_fire_high_count = 0;
+            }
+        } else {
+            if (fire_percent <= FIRE_THRESHOLD_PERCENT) {
+                uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
+                if (g_fire_low_since_ms == 0) {
+                    g_fire_low_since_ms = now;
+                } else if (now - g_fire_low_since_ms >= FIRE_CLEAR_TIME_MS) {
+                    ESP_LOGI(TAG, "[FIRE] Auto-reset: %dmV(%d%%) <= %d%% for 15s",
+                             (int)fire_mv, (int)fire_percent, FIRE_THRESHOLD_PERCENT);
+                    DEVICE_FLAGS_LOCK();
+                    g_device_flags.fire_status = FIRE_NORMAL;
+                    g_device_flags.relay[3] = SWITCH_ON;
+                    g_device_flags.strip_red = 255;
+                    g_device_flags.strip_green = 195;
+                    g_device_flags.strip_blue = 80;
+                    g_device_flags.strip_brightness = 40;
+                    g_device_flags.strip_effect = IOT_STRIP_EFFECT_SOLID;
+                    g_device_flags.ambience_scene = IOT_AMBIENCE_SCENE_NORMAL;
+                    g_device_flags.light[0] = SWITCH_ON;
+                    g_device_flags.light[1] = SWITCH_ON;
+                    g_device_flags.light[2] = SWITCH_ON;
+                    DEVICE_FLAGS_UNLOCK();
+                    MQTT_Publish_Scene(g_device_flags.ambience_scene);
+                    g_fire_low_since_ms = 0;
+                }
+            } else {
+                g_fire_low_since_ms = 0;
+            }
+        }
 
         if (rain_wet) {
             g_rain_clear_count = 0;
@@ -166,6 +219,7 @@ static void Sensor_ADC_Task(void* arg) {
                         g_device_flags.strip_effect = IOT_STRIP_EFFECT_BREATHE;
                         g_device_flags.ambience_scene = IOT_AMBIENCE_SCENE_RAIN;
                         xTaskNotify(s_iot_ctrl_task_handle, NOTIFY_RAIN_BIT, eSetBits);
+                        MQTT_Publish_Scene(IOT_AMBIENCE_SCENE_RAIN);
                     }
                     DEVICE_FLAGS_UNLOCK();
                 }
@@ -191,6 +245,7 @@ static void Sensor_ADC_Task(void* arg) {
                     g_device_flags.ambience_scene = IOT_AMBIENCE_SCENE_NORMAL;
                 }
                 DEVICE_FLAGS_UNLOCK();
+                MQTT_Publish_Scene(g_device_flags.ambience_scene);
                 g_rain_clear_count = 0;
             }
         }
@@ -205,16 +260,18 @@ static void Sensor_ADC_Task(void* arg) {
         if (++log_tick >= 2) {
             log_tick = 0;
             if (g_dht_valid) {
-                ESP_LOGI(TAG, "Soil:%dmV(%d%%) Rain:%dmV(%d%%) Fire:%d Help:%d Temp:%.1fC Hum:%.1f%%",
+                ESP_LOGI(TAG, "Soil:%dmV(%d%%) Rain:%dmV(%d%%) Fire:%dmV(%d%%) Help:%d Temp:%.1fC Hum:%.1f%%",
                          (int)soil_mv, (int)soil_percent,
                          (int)rain_mv, (int)rain_percent,
-                         (int)g_device_flags.fire_status, g_help_detected ? 1 : 0,
+                         (int)fire_mv, (int)fire_percent,
+                         g_help_detected ? 1 : 0,
                          g_temperature, g_humidity);
             } else {
-                ESP_LOGI(TAG, "Soil:%dmV(%d%%) Rain:%dmV(%d%%) Fire:%d Help:%d Temp:N/A Hum:N/A",
+                ESP_LOGI(TAG, "Soil:%dmV(%d%%) Rain:%dmV(%d%%) Fire:%dmV(%d%%) Help:%d Temp:N/A Hum:N/A",
                          (int)soil_mv, (int)soil_percent,
                          (int)rain_mv, (int)rain_percent,
-                         (int)g_device_flags.fire_status, g_help_detected ? 1 : 0);
+                         (int)fire_mv, (int)fire_percent,
+                         g_help_detected ? 1 : 0);
             }
         }
 
@@ -317,11 +374,13 @@ static void Sensor_ADC_Task(void* arg) {
 
                 char payload[384];
                 int len = snprintf(payload, sizeof(payload),
-                    "{\"soil_mv\":%d,\"soil_percent\":%d,\"rain_mv\":%d,\"rain_percent\":%d,\"fire_status\":%d,"
+                    "{\"soil_mv\":%d,\"soil_percent\":%d,\"rain_mv\":%d,\"rain_percent\":%d,"
+                    "\"fire_mv\":%d,\"fire_percent\":%d,\"fire_status\":%d,"
                     "\"rain_status\":%d,\"help_status\":%d,"
                     "\"temperature\":%.1f,\"humidity\":%.1f}",
                     (int)soil_mv, (int)soil_percent,
                     (int)rain_mv, (int)rain_percent,
+                    (int)fire_mv, (int)fire_percent,
                     (int)g_device_flags.fire_status,
                     rain_wet, g_help_detected ? 1 : 0,
                     g_temperature, g_humidity);
@@ -335,9 +394,11 @@ static void Sensor_ADC_Task(void* arg) {
                     ESP_LOGW(TAG, "MQTT not connected, sensor report skipped");
                 }
             }
-            ESP_LOGD(TAG, "Soil:%dmV(%d%%) Rain:%dmV(%d%%) Fire:%d Help:%d Temp:%.1f Hum:%.1f",
+            ESP_LOGD(TAG, "Soil:%dmV(%d%%) Rain:%dmV(%d%%) Fire:%dmV(%d%%) Help:%d Temp:%.1f Hum:%.1f",
                      (int)soil_mv, (int)soil_percent,
-                     (int)rain_mv, (int)rain_percent, fire_status, help_status,
+                     (int)rain_mv, (int)rain_percent,
+                     (int)fire_mv, (int)fire_percent,
+                     help_status,
                      g_temperature, g_humidity);
             last_report = now;
         }

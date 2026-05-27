@@ -71,9 +71,8 @@ void Iot_Fire_Emergency_Response(void);
 void Iot_Help_Emergency_Response(void);
 void Iot_Rain_Alert_Response(void);
 
-#define NOTIFY_FIRE_BIT       (1UL << 0)
-#define NOTIFY_HELP_BIT       (1UL << 1)
-#define NOTIFY_RAIN_BIT       (1UL << 2)
+#define NOTIFY_HELP_BIT              (1UL << 0)
+#define NOTIFY_RAIN_BIT              (1UL << 1)
 
 extern TaskHandle_t s_iot_ctrl_task_handle;
 extern volatile bool g_help_detected;
