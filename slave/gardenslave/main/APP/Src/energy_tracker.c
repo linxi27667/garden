@@ -88,7 +88,7 @@ void Energy_Tracker_Update(bool device_on[ENERGY_DEV_COUNT]) {
     for (int i = 0; i < ENERGY_DEV_COUNT; i++) {
         g_last_on_state[i] = device_on[i];
         if (device_on[i]) {
-            float delta_kwh = (RATED_WATTS[i] / 1000.0f) * ((float)delta_us / 3600000000.0f);
+            float delta_kwh = (RATED_WATTS[i] / 1000.0f) * ((float)(delta_us * ENERGY_DEMO_SPEEDUP) / 3600000000.0f);
             g_energy.kwh[i] += delta_kwh;
         }
     }

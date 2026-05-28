@@ -8,7 +8,8 @@
 #define ENERGY_NVS_NAMESPACE     "energy"
 #define ENERGY_NVS_KEY           "accum"
 #define ENERGY_SAVE_INTERVAL_MS  30000    // 30 seconds
-#define ENERGY_REPORT_INTERVAL_S 10     // 2 hours
+#define ENERGY_REPORT_INTERVAL_S 10
+#define ENERGY_DEMO_SPEEDUP      60     // 2 hours
 
 typedef struct {
     float kwh[ENERGY_DEV_COUNT];
