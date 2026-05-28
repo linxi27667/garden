@@ -15,6 +15,7 @@
 #define MQTT_TOPIC_SENSOR_PREFIX    "xiaozhi/iot/sensor/"
 #define MQTT_TOPIC_EMERGENCY_PREFIX "xiaozhi/iot/emergency/"
 #define MQTT_TOPIC_STATUS_PREFIX   "xiaozhi/iot/status/"
+#define MQTT_TOPIC_CHAT            "xiaozhi/garden/chat"
 
 /* ================= 命令码定义 (与原ESP-NOW一致) ================= */
 typedef enum {

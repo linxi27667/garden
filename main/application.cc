@@ -9,6 +9,7 @@
 #include "mcp_server.h"
 #include "assets.h"
 #include "settings.h"
+#include "iot_controller.h"
 
 #include <cstring>
 #include <esp_log.h>
@@ -548,6 +549,7 @@ void Application::InitializeProtocol() {
                     Schedule([display, message = std::string(text->valuestring)]() {
                         display->SetChatMessage("assistant", message.c_str());
                     });
+                    App_IOT_MQTT_Publish_Chat("assistant", text->valuestring);
                 }
             }
         } else if (strcmp(type->valuestring, "stt") == 0) {
@@ -557,6 +559,7 @@ void Application::InitializeProtocol() {
                 Schedule([display, message = std::string(text->valuestring)]() {
                     display->SetChatMessage("user", message.c_str());
                 });
+                App_IOT_MQTT_Publish_Chat("user", text->valuestring);
             }
         } else if (strcmp(type->valuestring, "llm") == 0) {
             auto emotion = cJSON_GetObjectItem(root, "emotion");

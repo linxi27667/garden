@@ -65,6 +65,7 @@ void App_IOT_Register_Mqtt_Cmd_Callback(const char* topic_prefix, iot_mqtt_cmd_c
 void App_IOT_Register_Emergency_Alert_Callback(iot_emergency_alert_cb_t cb);
 
 void App_IOT_Emergency_Alert(const char* type, const char* detail);
+void App_IOT_MQTT_Publish_Chat(const char* role, const char* text);
 
 #ifdef __cplusplus
 }

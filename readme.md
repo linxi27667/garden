@@ -24,6 +24,7 @@
 | 火灾解除恢复 | 已实现 | 火源移除后电压回稳，连续15s低于阈值自动恢复风和日丽 |
 | 求助告警 | 已实现 | 求助按钮触发照明、MQTT emergency 和主机播报 |
 | Web 控制面板 | 已实现 | `web/index.html` MQTT.js 直连，`web/control-panel` WebSocket 面板 |
+| AI 对话实时转发 | 已实现 | 主机将 ASR/TTS 文本通过 `xiaozhi/garden/chat` 实时推送到 App |
 
 ## 系统架构
 
@@ -334,6 +335,7 @@ Topic：
 | `xiaozhi/garden/cmd` | Web/App -> 主机 | JSON | 高层庭院命令 |
 | `xiaozhi/garden/status` | 主机 -> Web/App | JSON | 聚合设备状态 |
 | `xiaozhi/garden/sensors` | 主机 -> Web/App | JSON | 聚合传感器状态 |
+| `xiaozhi/garden/chat` | 主机 -> App | JSON | AI 对话实时转发（ASR/TTS 文本） |
 
 ### 命令码
 
@@ -377,6 +379,7 @@ App 作为第二主机，可以直接通过 MQTT 控制从机，无需经过小�
 | `xiaozhi/iot/emergency/+` | JSON | 事件触发 | 火灾/求助/雨天告警 |
 | `xiaozhi/garden/status` | JSON | 5s | 设备状态（需主机在线） |
 | `xiaozhi/garden/sensors` | JSON | 5s | 传感器聚合（需主机在线） |
+| `xiaozhi/garden/chat` | JSON | 实时 | AI 对话文本（用户语音识别 + AI 回复） |
 
 **向从机发送二进制命令**：
 
@@ -529,6 +532,20 @@ Topic：`xiaozhi/garden/sensors`
 }
 ```
 
+Topic：`xiaozhi/garden/chat`
+
+用户语音识别结果（ASR）：
+
+```json
+{"role": "user", "text": "打开庭院灯", "ts": 1716800000}
+```
+
+AI 回复文本（TTS）：
+
+```json
+{"role": "assistant", "text": "好的，已为您打开庭院灯", "ts": 1716800001}
+```
+
 从机原始传感器上报（每 5 秒）+ INFO 日志（每 1 秒）：
 
 ```json
@@ -593,3 +610,4 @@ cd slave/gardenslave
 - **智能遮雨棚**：下雨自动展开 90°，雨停自动收回 0°并恢复正常场景。
 - **多传感器联动**：土壤+水泵、温湿度+通风扇/雾化器、雨滴+舵机，六大传感器协同。
 - **MQTT 统一总线**：Topic 和 JSON 接口已能支撑后续 App 或云端平台接入。
+- **AI 对话实时同步**：App 订阅 `xiaozhi/garden/chat` 即可实时查看用户与 AI 的对话内容，支持 ASR 识别文本和 TTS 回复文本。

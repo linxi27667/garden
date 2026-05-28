@@ -124,6 +124,8 @@ static void Apply_Ambience_Scene_Locked(uint8_t scene_id) {
         g_device_flags.light[0] = SWITCH_OFF;
         g_device_flags.light[1] = SWITCH_ON;
         g_device_flags.light[2] = SWITCH_OFF;
+        g_device_flags.relay[0] = SWITCH_ON;
+        g_device_flags.relay[2] = SWITCH_ON;
         g_device_flags.strip_red = 70;
         g_device_flags.strip_green = 185;
         g_device_flags.strip_blue = 250;

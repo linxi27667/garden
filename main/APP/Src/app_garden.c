@@ -434,6 +434,8 @@ bool App_Garden_Set_Ambience_Scene(const char* scene) {
         App_Garden_Set_Corridor_Light(GARDEN_SWITCH_OFF);
         App_Garden_Set_Strip_Light(GARDEN_SWITCH_ON);
         App_Garden_Set_Veg_Light(GARDEN_SWITCH_OFF);
+        App_Garden_Set_Fan(GARDEN_SWITCH_ON);
+        App_Garden_Set_Atomizer(GARDEN_SWITCH_ON);
         break;
     case IOT_AMBIENCE_SCENE_RELAX:   /* 闲庭信步 */
         red = 65; green = 210; blue = 95; brightness = 28; effect = IOT_STRIP_EFFECT_BREATHE;

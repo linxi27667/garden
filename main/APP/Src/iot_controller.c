@@ -1,7 +1,9 @@
 #include "iot_controller.h"
 #include "bsp_iot_controller.h"
+#include "mqtt_iot_protocol.h"
 
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "driver/gpio.h"
 #include "mqtt_client.h"
 #include "esp_wifi.h"
@@ -686,5 +688,19 @@ void App_IOT_Emergency_Alert(const char* type, const char* detail) {
 
     if (s_emergency_alert_cb != NULL) {
         s_emergency_alert_cb(type, detail);
+    }
+}
+
+void App_IOT_MQTT_Publish_Chat(const char* role, const char* text) {
+    if (s_mqtt_client == NULL || role == NULL || text == NULL) return;
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "role", role);
+    cJSON_AddStringToObject(root, "text", text);
+    cJSON_AddNumberToObject(root, "ts", esp_timer_get_time() / 1000);
+    char* json = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (json) {
+        esp_mqtt_client_publish(s_mqtt_client, MQTT_TOPIC_CHAT, json, 0, 0, 0);
+        cJSON_free(json);
     }
 }
