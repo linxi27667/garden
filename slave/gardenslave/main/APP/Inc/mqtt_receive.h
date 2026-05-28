@@ -37,4 +37,7 @@ void MQTT_Register_Emergency_Callback(emergency_event_cb_t cb);
 void MQTT_Publish_Emergency(emergency_type_t type, const char* detail);
 void MQTT_Publish_Scene(uint8_t scene_id);
 
+#include "energy_tracker.h"
+void MQTT_Publish_Energy(const energy_accum_t* data, const bool on_state[ENERGY_DEV_COUNT]);
+
 #endif

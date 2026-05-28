@@ -26,6 +26,43 @@
   - 低湿度自动开雾化器
   - 高湿度自动开风扇除湿
 
+### 能耗追踪
+- 基于额定功率×运行时间计算各设备用电量（kWh）
+- 无需额外硬件（无电流/电压传感器）
+- 数据持久化到 NVS，断电不丢失
+- MQTT 实时上报（QoS 1，retained）
+
+**设备额定功率表**：
+| 设备 | device_id | 额定功率 W |
+|------|-----------|-----------|
+| 西庭灯 | `corridor_light` | 10 |
+| 庭院灯带 | `strip_light` | 15 |
+| 长廊灯 | `veg_light` | 12 |
+| 通风扇 | `fan` | 35 |
+| 水泵 | `water_pump` | 25 |
+| 雾化器 | `atomizer` | 15 |
+
+**上报时机**：
+- 设备状态变化时立即上报
+- 每 2 小时兜底上报
+- MCU 启动时上报
+- App 请求时回复
+
+**数据格式**：
+```json
+{
+  "devices": {
+    "corridor_light":  { "kwh": 0.455,  "on": true },
+    "strip_light":     { "kwh": 0.453,  "on": true },
+    "veg_light":       { "kwh": 0.240,  "on": false },
+    "fan":             { "kwh": 1.253,  "on": true },
+    "water_pump":      { "kwh": 0.375,  "on": false },
+    "atomizer":        { "kwh": 0.158,  "on": true }
+  },
+  "total_kwh": 2.934
+}
+```
+
 ### 紧急事件链路
 - **火灾**：GPIO 中断 → 本地响应（GPIO17 拉低切总闸/关水泵/全开灯）→ MQTT 紧急上报 → ASR 语音播报 → 主机唤醒小智 → 蜂鸣器报警 → 语音播报"火灾警报"
 - **求助**：GPIO 中断 → 全开灯 → MQTT 紧急上报 → ASR 语音播报 → 主机唤醒小智 → 蜂鸣器报警 → 语音播报"紧急求助"
@@ -86,6 +123,7 @@ idf.py -p COM3 flash monitor
 | `xiaozhi/iot/heartbeat/<mac>` | 从机→主机 | 心跳 |
 | `xiaozhi/iot/sensor/<mac>` | 从机→主机 | 传感器数据（JSON） |
 | `xiaozhi/iot/emergency/<mac>` | 从机→主机 | 紧急事件 |
+| `xiaozhi/iot/energy/<mac>` | 从机→主机 | 能耗数据（JSON，retained） |
 
 ### 命令码
 
@@ -147,12 +185,14 @@ gardenslave/
     │   │   ├── mqtt_heartbeat.h   # 心跳
     │   │   ├── sensor_adc_task.h  # 传感器采集
     │   │   ├── sensor_config.h    # 传感器配置
+    │   │   ├── energy_tracker.h   # 能耗追踪
     │   │   └── app_asr_uart.h     # ASR语音模块
     │   └── Src/
     │       ├── iot_control_task.c # Flag-driven设备刷新+中断处理
     │       ├── mqtt_receive.c     # MQTT命令解析+紧急上报
     │       ├── mqtt_heartbeat.c   # 心跳发送
     │       ├── sensor_adc_task.c  # ADC+DHT11采集+自动模式
+    │       ├── energy_tracker.c   # 能耗追踪+NVS持久化
     │       └── app_asr_uart.c     # ASR语音播报
     └── BSP/                       # 底层驱动
         ├── Inc/

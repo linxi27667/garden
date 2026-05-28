@@ -17,6 +17,7 @@
 #include "mqtt_heartbeat.h"
 #include "iot_control_task.h"
 #include "sensor_adc_task.h"
+#include "energy_tracker.h"
 
 static const char* TAG = "MAIN";
 
@@ -47,6 +48,10 @@ void app_main(void) {
     ESP_LOGI(TAG, "Initializing Heartbeat...");
     MQTT_Heartbeat_Init();
     ESP_LOGI(TAG, "Heartbeat init returned");
+
+    ESP_LOGI(TAG, "Initializing Energy Tracker...");
+    Energy_Tracker_Init();
+    ESP_LOGI(TAG, "Energy Tracker init returned");
 
     ESP_LOGI(TAG, "Initializing Sensors...");
     Sensor_ADC_Task_Init();

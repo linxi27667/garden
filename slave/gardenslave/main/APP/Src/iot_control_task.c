@@ -3,6 +3,7 @@
 #include "app_asr_uart.h"
 #include "app_ws2812_strip.h"
 #include "mqtt_iot_protocol.h"
+#include "energy_tracker.h"
 
 #include "esp_log.h"
 #include "driver/gpio.h"
@@ -284,6 +285,18 @@ static void Device_Refresh_Task(void* arg) {
         }
         for (int i = 0; i < SERVO_COUNT; i++) {
             HW_Servo_Set_Angle(g_servo_channels[i], flags_snapshot.servo[i]);
+        }
+
+        {
+            bool energy_dev_on[ENERGY_DEV_COUNT] = {
+                flags_snapshot.light[0] == SWITCH_ON,
+                flags_snapshot.light[1] == SWITCH_ON,
+                flags_snapshot.light[2] == SWITCH_ON,
+                flags_snapshot.relay[0] == SWITCH_ON,
+                flags_snapshot.relay[1] == SWITCH_ON,
+                flags_snapshot.relay[2] == SWITCH_ON
+            };
+            Energy_Tracker_Update(energy_dev_on);
         }
 
         uint32_t notified_bits = 0;

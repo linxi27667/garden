@@ -25,6 +25,7 @@
 | 求助告警 | 已实现 | 求助按钮触发照明、MQTT emergency 和主机播报 |
 | Web 控制面板 | 已实现 | `web/index.html` MQTT.js 直连，`web/control-panel` WebSocket 面板 |
 | AI 对话实时转发 | 已实现 | 主机将 ASR/TTS 文本通过 `xiaozhi/garden/chat` 实时推送到 App |
+| 能耗追踪 | 已实现 | 从机基于额定功率×运行时间积分各设备用电量，MQTT 上报，NVS 持久化 |
 
 ## 系统架构
 
@@ -90,8 +91,9 @@ slave/gardenslave/
   main/iot_slave_main.c                 从机入口
   main/APP/Src/mqtt_receive.c           MQTT 订阅、命令解析、响应发布
   main/APP/Src/mqtt_heartbeat.c         心跳
-  main/APP/Src/iot_control_task.c       执行器刷新、火灾/求助中断
+  main/APP/Src/iot_control_task.c       执行器刷新、火灾/求助中断、能耗积分
   main/APP/Src/sensor_adc_task.c        ADC、DHT11、自动控制、传感器上报
+  main/APP/Src/energy_tracker.c         能耗追踪、NVS 持久化
   main/APP/Src/app_asr_uart.c           从机本地语音模块告警串口
   main/APP/Inc/sensor_config.h          传感器阈值和自动模式参数
 
@@ -332,6 +334,7 @@ Topic：
 | `xiaozhi/iot/sensor/{mac}` | 从机 -> 主机/Web | JSON 或二进制 | 传感器状态 |
 | `xiaozhi/iot/emergency/{mac}` | 从机 -> 主机/Web | JSON | 火灾、求助、雨天事件 |
 | `xiaozhi/iot/status/{mac}` | 从机 -> 主机/Web/App | JSON | 场景切换通知 |
+| `xiaozhi/iot/energy/{mac}` | 从机 -> 主机/Web/App | JSON | 能耗数据（retained，QoS 1） |
 | `xiaozhi/garden/cmd` | Web/App -> 主机 | JSON | 高层庭院命令 |
 | `xiaozhi/garden/status` | 主机 -> Web/App | JSON | 聚合设备状态 |
 | `xiaozhi/garden/sensors` | 主机 -> Web/App | JSON | 聚合传感器状态 |
@@ -377,6 +380,7 @@ App 作为第二主机，可以直接通过 MQTT 控制从机，无需经过小�
 | `xiaozhi/iot/sensor/+` | JSON | 5s | 传感器原始数据 |
 | `xiaozhi/iot/heartbeat/+` | 二进制 | 10s | 从机在线心跳 |
 | `xiaozhi/iot/emergency/+` | JSON | 事件触发 | 火灾/求助/雨天告警 |
+| `xiaozhi/iot/energy/+` | JSON | 状态变化+2h | 能耗数据（retained） |
 | `xiaozhi/garden/status` | JSON | 5s | 设备状态（需主机在线） |
 | `xiaozhi/garden/sensors` | JSON | 5s | 传感器聚合（需主机在线） |
 | `xiaozhi/garden/chat` | JSON | 实时 | AI 对话文本（用户语音识别 + AI 回复） |
@@ -558,6 +562,22 @@ AI 回复文本（TTS）：
 
 ```json
 {"type":"scene","scene_id":6,"scene_name":"风和日丽"}
+```
+
+能耗数据（retained，订阅即得最新值）：
+
+```json
+{
+  "devices": {
+    "corridor_light":  { "kwh": 0.455, "on": true },
+    "strip_light":     { "kwh": 0.453, "on": true },
+    "veg_light":       { "kwh": 0.240, "on": false },
+    "fan":             { "kwh": 1.253, "on": true },
+    "water_pump":      { "kwh": 0.375, "on": false },
+    "atomizer":        { "kwh": 0.158, "on": true }
+  },
+  "total_kwh": 2.934
+}
 ```
 
 ## 构建与烧录

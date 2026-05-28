@@ -579,3 +579,42 @@ const char* MQTT_Get_MAC_Str(void) {
 bool MQTT_Is_Connected(void) {
     return s_mqtt_connected;
 }
+
+void MQTT_Publish_Energy(const energy_accum_t* data, const bool on_state[ENERGY_DEV_COUNT]) {
+    if (!MQTT_Can_Publish("energy")) return;
+
+    float total = 0;
+    for (int i = 0; i < ENERGY_DEV_COUNT; i++) total += data->kwh[i];
+
+    char buf[512];
+    int len = snprintf(buf, sizeof(buf),
+        "{"
+          "\"devices\":{"
+            "\"corridor_light\":{\"kwh\":%.3f,\"on\":%s},"
+            "\"strip_light\":{\"kwh\":%.3f,\"on\":%s},"
+            "\"veg_light\":{\"kwh\":%.3f,\"on\":%s},"
+            "\"fan\":{\"kwh\":%.3f,\"on\":%s},"
+            "\"water_pump\":{\"kwh\":%.3f,\"on\":%s},"
+            "\"atomizer\":{\"kwh\":%.3f,\"on\":%s}"
+          "},"
+          "\"total_kwh\":%.3f"
+        "}",
+        data->kwh[0], on_state[0] ? "true" : "false",
+        data->kwh[1], on_state[1] ? "true" : "false",
+        data->kwh[2], on_state[2] ? "true" : "false",
+        data->kwh[3], on_state[3] ? "true" : "false",
+        data->kwh[4], on_state[4] ? "true" : "false",
+        data->kwh[5], on_state[5] ? "true" : "false",
+        total
+    );
+
+    if (len < 0 || len >= (int)sizeof(buf)) {
+        ESP_LOGE(TAG, "Energy payload too long");
+        return;
+    }
+
+    char topic[64];
+    snprintf(topic, sizeof(topic), MQTT_TOPIC_ENERGY_PREFIX "%s", s_mac_str);
+    esp_mqtt_client_publish(s_mqtt_client, topic, buf, len, 1, 1);
+    ESP_LOGI(TAG, "Energy published: total=%.3f kWh", total);
+}

@@ -15,6 +15,8 @@
 #define MQTT_TOPIC_SENSOR_PREFIX    "xiaozhi/iot/sensor/"
 #define MQTT_TOPIC_EMERGENCY_PREFIX "xiaozhi/iot/emergency/"
 #define MQTT_TOPIC_STATUS_PREFIX   "xiaozhi/iot/status/"
+#define MQTT_TOPIC_ENERGY_PREFIX   "xiaozhi/iot/energy/"
+#define MQTT_TOPIC_ENERGY_REQ_PREFIX "xiaozhi/iot/energy/request/"
 #define MQTT_TOPIC_CHAT            "xiaozhi/garden/chat"
 
 /* ================= 命令码定义 (与原ESP-NOW一致) ================= */
@@ -107,6 +109,24 @@ typedef enum {
     IOT_SENSOR_HELP_STATUS = 4, // 求助状态 (0=无, 1=求助)
     IOT_SENSOR_RAIN_ADC_MV = 5  // 雨滴传感器ADC(mV)
 } iot_sensor_type_t;
+
+/* ================= 能耗追踪定义 ================= */
+typedef enum {
+    ENERGY_DEV_CORRIDOR_LIGHT = 0,  // 西庭灯  10W
+    ENERGY_DEV_STRIP_LIGHT    = 1,  // 庭院灯带 15W
+    ENERGY_DEV_VEG_LIGHT      = 2,  // 长廊灯  12W
+    ENERGY_DEV_FAN            = 3,  // 通风扇  35W
+    ENERGY_DEV_WATER_PUMP     = 4,  // 水泵    25W
+    ENERGY_DEV_ATOMIZER       = 5,  // 雾化器  15W
+    ENERGY_DEV_COUNT          = 6
+} energy_device_index_t;
+
+#define ENERGY_RATE_W_CORRIDOR_LIGHT  10
+#define ENERGY_RATE_W_STRIP_LIGHT     15
+#define ENERGY_RATE_W_VEG_LIGHT       12
+#define ENERGY_RATE_W_FAN             35
+#define ENERGY_RATE_W_WATER_PUMP      25
+#define ENERGY_RATE_W_ATOMIZER        15
 
 /* ================= 设备ID定义 ================= */
 #define DEVICE_ID_FIRSTFLOOR    "1"
