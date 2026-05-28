@@ -422,12 +422,16 @@ bool App_Garden_Set_Ambience_Scene(const char* scene) {
         App_Garden_Set_Corridor_Light(GARDEN_SWITCH_ON);
         App_Garden_Set_Strip_Light(GARDEN_SWITCH_ON);
         App_Garden_Set_Veg_Light(GARDEN_SWITCH_ON);
+        App_Garden_Set_Fan(GARDEN_SWITCH_OFF);
+        App_Garden_Set_Atomizer(GARDEN_SWITCH_OFF);
         break;
     case IOT_AMBIENCE_SCENE_NIGHT:   /* 月白风清 */
         red = 190; green = 200; blue = 235; brightness = 15; effect = IOT_STRIP_EFFECT_SOLID;
         App_Garden_Set_Corridor_Light(GARDEN_SWITCH_ON);
         App_Garden_Set_Strip_Light(GARDEN_SWITCH_ON);
         App_Garden_Set_Veg_Light(GARDEN_SWITCH_ON);
+        App_Garden_Set_Fan(GARDEN_SWITCH_OFF);
+        App_Garden_Set_Atomizer(GARDEN_SWITCH_OFF);
         break;
     case IOT_AMBIENCE_SCENE_HOT:     /* 清风徐来 */
         red = 70; green = 185; blue = 250; brightness = 45; effect = IOT_STRIP_EFFECT_BREATHE;
@@ -442,12 +446,16 @@ bool App_Garden_Set_Ambience_Scene(const char* scene) {
         App_Garden_Set_Corridor_Light(GARDEN_SWITCH_ON);
         App_Garden_Set_Strip_Light(GARDEN_SWITCH_ON);
         App_Garden_Set_Veg_Light(GARDEN_SWITCH_OFF);
+        App_Garden_Set_Fan(GARDEN_SWITCH_OFF);
+        App_Garden_Set_Atomizer(GARDEN_SWITCH_ON);
         break;
     case IOT_AMBIENCE_SCENE_RAIN:    /* 烟雨朦胧 */
         red = 50; green = 85; blue = 200; brightness = 25; effect = IOT_STRIP_EFFECT_BREATHE;
         App_Garden_Set_Corridor_Light(GARDEN_SWITCH_ON);
         App_Garden_Set_Strip_Light(GARDEN_SWITCH_ON);
         App_Garden_Set_Veg_Light(GARDEN_SWITCH_ON);
+        App_Garden_Set_Fan(GARDEN_SWITCH_OFF);
+        App_Garden_Set_Atomizer(GARDEN_SWITCH_OFF);
         break;
     case IOT_AMBIENCE_SCENE_SAFE:    /* 安全警戒 */
         red = 255; green = 255; blue = 255; brightness = 100; effect = IOT_STRIP_EFFECT_ALERT;
@@ -460,6 +468,8 @@ bool App_Garden_Set_Ambience_Scene(const char* scene) {
     case IOT_AMBIENCE_SCENE_ECO:     /* 万籁俱寂 */
         red = 0; green = 0; blue = 0; brightness = 0; effect = IOT_STRIP_EFFECT_SOLID;
         App_Garden_All_Lights_Off();
+        App_Garden_Set_Fan(GARDEN_SWITCH_OFF);
+        App_Garden_Set_Atomizer(GARDEN_SWITCH_OFF);
         break;
     case IOT_AMBIENCE_SCENE_CUSTOM:
     default:

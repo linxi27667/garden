@@ -104,6 +104,8 @@ static void Apply_Ambience_Scene_Locked(uint8_t scene_id) {
         g_device_flags.light[0] = SWITCH_ON;
         g_device_flags.light[1] = SWITCH_ON;
         g_device_flags.light[2] = SWITCH_ON;
+        g_device_flags.relay[0] = SWITCH_OFF;
+        g_device_flags.relay[2] = SWITCH_OFF;
         g_device_flags.strip_red = 255;
         g_device_flags.strip_green = 195;
         g_device_flags.strip_blue = 80;
@@ -114,6 +116,8 @@ static void Apply_Ambience_Scene_Locked(uint8_t scene_id) {
         g_device_flags.light[0] = SWITCH_ON;
         g_device_flags.light[1] = SWITCH_ON;
         g_device_flags.light[2] = SWITCH_ON;
+        g_device_flags.relay[0] = SWITCH_OFF;
+        g_device_flags.relay[2] = SWITCH_OFF;
         g_device_flags.strip_red = 190;
         g_device_flags.strip_green = 200;
         g_device_flags.strip_blue = 235;
@@ -136,6 +140,8 @@ static void Apply_Ambience_Scene_Locked(uint8_t scene_id) {
         g_device_flags.light[0] = SWITCH_ON;
         g_device_flags.light[1] = SWITCH_ON;
         g_device_flags.light[2] = SWITCH_OFF;
+        g_device_flags.relay[0] = SWITCH_OFF;
+        g_device_flags.relay[2] = SWITCH_ON;
         g_device_flags.strip_red = 65;
         g_device_flags.strip_green = 210;
         g_device_flags.strip_blue = 95;
@@ -146,6 +152,8 @@ static void Apply_Ambience_Scene_Locked(uint8_t scene_id) {
         g_device_flags.light[0] = SWITCH_ON;
         g_device_flags.light[1] = SWITCH_ON;
         g_device_flags.light[2] = SWITCH_ON;
+        g_device_flags.relay[0] = SWITCH_OFF;
+        g_device_flags.relay[2] = SWITCH_OFF;
         g_device_flags.strip_red = 50;
         g_device_flags.strip_green = 85;
         g_device_flags.strip_blue = 200;
@@ -170,6 +178,8 @@ static void Apply_Ambience_Scene_Locked(uint8_t scene_id) {
         g_device_flags.light[0] = SWITCH_OFF;
         g_device_flags.light[1] = SWITCH_OFF;
         g_device_flags.light[2] = SWITCH_OFF;
+        g_device_flags.relay[0] = SWITCH_OFF;
+        g_device_flags.relay[2] = SWITCH_OFF;
         g_device_flags.strip_red = 0;
         g_device_flags.strip_green = 0;
         g_device_flags.strip_blue = 0;
