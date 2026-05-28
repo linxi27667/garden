@@ -12,6 +12,7 @@
 static const char* TAG = "ENERGY";
 
 static energy_accum_t g_energy = {0};
+static bool g_last_on_state[ENERGY_DEV_COUNT] = {false};
 static int64_t g_last_update_us = 0;
 static int64_t g_last_save_us = 0;
 static int64_t g_last_report_us = 0;
@@ -85,6 +86,7 @@ void Energy_Tracker_Update(bool device_on[ENERGY_DEV_COUNT]) {
     }
 
     for (int i = 0; i < ENERGY_DEV_COUNT; i++) {
+        g_last_on_state[i] = device_on[i];
         if (device_on[i]) {
             float delta_kwh = (RATED_WATTS[i] / 1000.0f) * ((float)delta_us / 3600000000.0f);
             g_energy.kwh[i] += delta_kwh;
@@ -115,9 +117,6 @@ const energy_accum_t* Energy_Tracker_Get_Data(void) {
 }
 
 void Energy_Tracker_Report_Now(void) {
-    extern void MQTT_Publish_Energy(const energy_accum_t* data, const bool on_state[ENERGY_DEV_COUNT]);
-    
-    bool on_state[ENERGY_DEV_COUNT] = {false};
-    MQTT_Publish_Energy(&g_energy, on_state);
+    MQTT_Publish_Energy(&g_energy, g_last_on_state);
     ESP_LOGI(TAG, "Energy report sent: total=%.3f kWh", Energy_Tracker_Get_Total());
 }

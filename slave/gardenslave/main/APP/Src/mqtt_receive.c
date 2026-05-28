@@ -1,6 +1,7 @@
 #include "mqtt_receive.h"
 #include "iot_control_task.h"
 #include "sensor_adc_task.h"
+#include "energy_tracker.h"
 #include "mqtt_iot_protocol.h"
 
 #include "esp_log.h"
@@ -422,6 +423,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
             esp_mqtt_client_subscribe(s_mqtt_client, MQTT_TOPIC_CMD_BROADCAST, 1);
             esp_mqtt_client_subscribe(s_mqtt_client, MQTT_TOPIC_CMD_PREFIX DEVICE_ID_GARDEN, 1);
             Send_Announce();
+            Energy_Tracker_Report_Now();
             break;
 
         case MQTT_EVENT_DISCONNECTED:
